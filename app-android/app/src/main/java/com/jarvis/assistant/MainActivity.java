@@ -9,6 +9,7 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.speech.RecognitionListener;
@@ -19,8 +20,10 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
@@ -28,7 +31,7 @@ import android.widget.Toast;
 import java.util.ArrayList;
 import java.util.List;
 
-/** JARVIS — the main chat screen. Native UI, voice input, skills + AI brain. */
+/** JARVIS - home screen: skill dashboard + chat + voice. Everything one tap away. */
 public class MainActivity extends Activity {
     private static final int BG = Color.rgb(5, 8, 12);
     private static final int PANEL = Color.rgb(7, 16, 25);
@@ -55,7 +58,11 @@ public class MainActivity extends Activity {
         setContentView(buildUI());
 
         messages.add(new ChatMessage(ChatMessage.ASSISTANT,
-                "JARVIS online — I run fully on this phone.\nSay \"help\" for commands, or just chat."));
+                "JARVIS online - everything runs on this phone.\n"
+                        + "Tap any skill button below\n"
+                        + "Press MIC and speak\n"
+                        + "Or just type anything\n"
+                        + "Type \"help\" for the full command list."));
         adapter.notifyDataSetChanged();
 
         askPermissions();
@@ -81,7 +88,7 @@ public class MainActivity extends Activity {
                 || !prefs.getString("cerebras_key", "").isEmpty()
                 || !prefs.getString("mistral_key", "").isEmpty()
                 || !prefs.getString("ollama_url", "").isEmpty();
-        personaLabel.setText("persona: " + persona + "   ·   brain: " + (keyed ? "your keys" : "free (no key)"));
+        personaLabel.setText("persona: " + persona + "   |   brain: " + (keyed ? "your keys" : "free (no key)"));
     }
 
     private View buildUI() {
@@ -89,7 +96,7 @@ public class MainActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(BG);
 
-        // top bar
+        // ---- top bar ----
         LinearLayout top = new LinearLayout(this);
         top.setOrientation(LinearLayout.VERTICAL);
         top.setBackgroundColor(PANEL);
@@ -116,13 +123,54 @@ public class MainActivity extends Activity {
         row.addView(btn("CORE", new View.OnClickListener() {
             public void onClick(View v) { startActivity(new Intent(MainActivity.this, ServerActivity.class)); }
         }));
-        row.addView(btn("⚙", new View.OnClickListener() {
+        row.addView(btn("SET", new View.OnClickListener() {
             public void onClick(View v) { startActivity(new Intent(MainActivity.this, SettingsActivity.class)); }
         }));
         top.addView(row);
         root.addView(top);
 
-        // chat list
+        // ---- full-core banner ----
+        LinearLayout banner = new LinearLayout(this);
+        banner.setOrientation(LinearLayout.HORIZONTAL);
+        banner.setGravity(Gravity.CENTER_VERTICAL);
+        banner.setBackgroundColor(Color.rgb(10, 30, 20));
+        banner.setPadding(dp(12), dp(6), dp(8), dp(6));
+        TextView btxt = new TextView(this);
+        btxt.setText("FULL CORE - 18 skills, 2165 personas, image & video, voice");
+        btxt.setTextColor(Color.rgb(190, 255, 215));
+        btxt.setTextSize(12);
+        banner.addView(btxt, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        banner.addView(btn("OPEN", new View.OnClickListener() {
+            public void onClick(View v) { startActivity(new Intent(MainActivity.this, ServerActivity.class)); }
+        }));
+        banner.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { startActivity(new Intent(MainActivity.this, ServerActivity.class)); }
+        });
+        root.addView(banner);
+
+        // ---- skill dashboard (tap to run) ----
+        HorizontalScrollView hsv = new HorizontalScrollView(this);
+        hsv.setBackgroundColor(PANEL);
+        hsv.setHorizontalScrollBarEnabled(false);
+        LinearLayout chips = new LinearLayout(this);
+        chips.setOrientation(LinearLayout.HORIZONTAL);
+        chips.setPadding(dp(8), dp(6), dp(8), dp(6));
+        chips.addView(chip("Time", "time", false));
+        chips.addView(chip("Calc", "calc ", true));
+        chips.addView(chip("Password", "password 16", false));
+        chips.addView(chip("Weather", "weather ", true));
+        chips.addView(chip("Search", "search ", true));
+        chips.addView(chip("Wiki", "wiki ", true));
+        chips.addView(chip("Translate", "translate  to ", true));
+        chips.addView(chip("Image", "image ", true));
+        chips.addView(chip("Notes", "note list", false));
+        chips.addView(chip("Remind", "remind me in 10 minutes to ", true));
+        chips.addView(chip("Personas", "persona list", false));
+        chips.addView(chip("Help", "help", false));
+        hsv.addView(chips);
+        root.addView(hsv);
+
+        // ---- chat list ----
         list = new ListView(this);
         list.setBackgroundColor(BG);
         list.setDivider(null);
@@ -131,7 +179,7 @@ public class MainActivity extends Activity {
         list.setAdapter(adapter);
         root.addView(list, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        // input row
+        // ---- input row ----
         LinearLayout in = new LinearLayout(this);
         in.setOrientation(LinearLayout.HORIZONTAL);
         in.setBackgroundColor(PANEL);
@@ -141,7 +189,7 @@ public class MainActivity extends Activity {
         input = new EditText(this);
         input.setTextColor(Color.WHITE);
         input.setHintTextColor(GREY);
-        input.setHint("Ask JARVIS anything…");
+        input.setHint("Ask JARVIS anything...");
         input.setBackgroundColor(Color.rgb(12, 22, 32));
         input.setSingleLine(false);
         input.setMaxLines(4);
@@ -155,8 +203,8 @@ public class MainActivity extends Activity {
             }
         });
         in.addView(input, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        in.addView(btn("🎤", new View.OnClickListener() { public void onClick(View v) { toggleMic(); } }));
-        in.addView(btn("➤", new View.OnClickListener() { public void onClick(View v) { send(); } }));
+        in.addView(btn("MIC", new View.OnClickListener() { public void onClick(View v) { toggleMic(); } }));
+        in.addView(btn("SEND", new View.OnClickListener() { public void onClick(View v) { send(); } }));
         root.addView(in);
         return root;
     }
@@ -175,16 +223,55 @@ public class MainActivity extends Activity {
         return b;
     }
 
+    private Button chip(String label, final String action, final boolean prefill) {
+        Button b = new Button(this);
+        b.setText(label);
+        b.setTextColor(GREEN);
+        b.setAllCaps(false);
+        b.setTextSize(13);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.rgb(12, 22, 32));
+        bg.setStroke(dp(1), Color.rgb(24, 84, 54));
+        bg.setCornerRadius(dp(18));
+        b.setBackground(bg);
+        b.setPadding(dp(14), dp(8), dp(14), dp(8));
+        b.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) {
+                if (prefill) prefill(action);
+                else process(action);
+            }
+        });
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(0, 0, dp(8), 0);
+        b.setLayoutParams(lp);
+        return b;
+    }
+
+    private void prefill(String s) {
+        input.setText(s);
+        input.requestFocus();
+        input.setSelection(s.length());
+        try {
+            ((InputMethodManager) getSystemService(INPUT_METHOD_SERVICE))
+                    .showSoftInput(input, InputMethodManager.SHOW_IMPLICIT);
+        } catch (Exception ignored) { }
+    }
+
     private void send() {
         final String text = input.getText().toString().trim();
         if (text.isEmpty()) return;
         input.setText("");
+        process(text);
+    }
+
+    private void process(final String text) {
         messages.add(new ChatMessage(ChatMessage.USER, text));
         adapter.notifyDataSetChanged();
         scroll();
 
         final List<ChatMessage> history = new ArrayList<ChatMessage>(messages);
-        final ChatMessage pending = new ChatMessage(ChatMessage.ASSISTANT, "…");
+        final ChatMessage pending = new ChatMessage(ChatMessage.ASSISTANT, "...");
         messages.add(pending);
         adapter.notifyDataSetChanged();
         scroll();
@@ -205,10 +292,10 @@ public class MainActivity extends Activity {
                     public void run() {
                         if (r == null) {
                             replacePending(pending,
-                                    "No brain responded. Add a free API key in ⚙ Settings (Groq / Gemini / OpenRouter), or check your connection.\nBuilt-in skills still work — type \"help\".",
+                                    "No brain responded. Add a free API key in SET (Groq / Gemini / OpenRouter), or check your connection.\nBuilt-in skills still work - tap Help.",
                                     null, null);
                         } else {
-                            replacePending(pending, r.text + "\n\n· via " + r.provider, null, null);
+                            replacePending(pending, r.text + "\n\n- via " + r.provider, null, null);
                         }
                     }
                 });
@@ -219,7 +306,7 @@ public class MainActivity extends Activity {
     private void replacePending(ChatMessage pending, String text, android.graphics.Bitmap image, String note) {
         int idx = messages.indexOf(pending);
         if (idx >= 0) messages.remove(idx);
-        String t = (text == null ? "" : text) + (note == null ? "" : "\n💾 " + note);
+        String t = (text == null ? "" : text) + (note == null ? "" : "\nSaved: " + note);
         ChatMessage m = new ChatMessage(ChatMessage.ASSISTANT, t);
         m.image = image;
         if (idx >= 0) messages.add(idx, m); else messages.add(m);

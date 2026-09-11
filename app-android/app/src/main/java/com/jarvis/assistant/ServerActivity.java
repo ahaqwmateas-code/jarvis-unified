@@ -40,7 +40,18 @@ public class ServerActivity extends Activity {
         s.setDomStorageEnabled(true);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         web.setBackgroundColor(Color.rgb(5, 8, 12));
-        web.setWebViewClient(new WebViewClient());
+        web.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onReceivedError(android.webkit.WebView view, int errorCode, String description, String failingUrl) {
+                String html = "<html><body style='background:#05080c;color:#33d17a;font-family:sans-serif;padding:40px;'>"
+                        + "<h2>JARVIS core not reachable</h2>"
+                        + "<p>Could not reach <b>" + failingUrl + "</b></p>"
+                        + "<p>Start the core on your Kali phone with:<br><b>bash ~/.jarvis/start.sh</b></p>"
+                        + "<p>Or set its address in SET (top-right) - e.g. http://127.0.0.1:8000 when it runs on this phone.</p>"
+                        + "</body></html>";
+                view.loadDataWithBaseURL(null, html, "text/html", "utf-8", null);
+            }
+        });
         root.addView(web, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
 
