@@ -1,0 +1,162 @@
+bash -s << 'JARVIS_EOF'
+set -e
+J=~/.jarvis
+PY=$(command -v python3)
+[ -x ~/omni-jarvis/venv/bin/python ] && PY=~/omni-jarvis/venv/bin/python
+
+"$PY" - << 'PYEOF'
+import os, shutil, py_compile
+
+J = os.path.expanduser("~/.jarvis")
+CORE = os.path.join(J, "core.py")
+BAK = CORE + ".bak4"
+
+LANG_HINT_FN = r'''def _lang_hint():
+    try:
+        c = json.load(open(os.path.join(APP_DIR, "lang.json")))
+        return " You must reply in " + c.get("name", "English") + " language."
+    except Exception:
+        return ""
+'''
+
+LANG_SKILL = r'''import os, json
+
+SKILL = {
+    "name": "lang",
+    "description": "lang / lang list / lang set <code> / lang auto / lang off",
+    "keywords": ["lang", "language", "idioma", "sprache", "langue"],
+}
+
+CFG = os.path.expanduser("~/.jarvis/lang.json")
+
+LANGS = {
+    "en": "English", "es": "Spanish", "fr": "French", "de": "German", "it": "Italian",
+    "pt": "Portuguese", "ru": "Russian", "ar": "Arabic", "hi": "Hindi", "zh": "Chinese",
+    "ja": "Japanese", "ko": "Korean", "tr": "Turkish", "nl": "Dutch", "pl": "Polish",
+    "sv": "Swedish", "no": "Norwegian", "da": "Danish", "fi": "Finnish", "el": "Greek",
+    "cs": "Czech", "ro": "Romanian", "hu": "Hungarian", "th": "Thai", "vi": "Vietnamese",
+    "id": "Indonesian", "ms": "Malay", "uk": "Ukrainian", "he": "Hebrew", "fa": "Persian",
+}
+
+
+def run(args, ctx):
+    a = args.strip().lower()
+
+    if a in ("", "status", "lang", "language", "idioma", "sprache", "langue"):
+        try:
+            c = json.load(open(CFG))
+            return "Language: " + c.get("name", "auto") + " (JARVIS always replies in this language)"
+        except Exception:
+            return "Language: auto (JARVIS replies in whatever language you write).\nType 'lang list' for options, 'lang set <code>' to fix one."
+
+    if a == "list":
+        lines = ["Supported languages:"]
+        for code, name in LANGS.items():
+            lines.append("  " + code + " - " + name)
+        return "\n".join(lines)
+
+    if a in ("off", "auto"):
+        try:
+            os.remove(CFG)
+        except Exception:
+            pass
+        return "Language: auto. JARVIS will reply in whatever language you write."
+
+    if a.startswith("set "):
+        code = a[4:].strip()
+        if code in LANGS:
+            json.dump({"code": code, "name": LANGS[code]}, open(CFG, "w"))
+            return "Language set to " + LANGS[code] + ". JARVIS will now reply in " + LANGS[code] + "."
+        return "Unknown code '" + code + "'. Type 'lang list'."
+
+    if a in LANGS:
+        json.dump({"code": a, "name": LANGS[a]}, open(CFG, "w"))
+        return "Language set to " + LANGS[a] + "."
+
+    return "Unknown language. Type 'lang list' or 'lang set <code>'."
+'''
+
+src = open(CORE).read()
+shutil.copy(CORE, BAK)
+changed = False
+
+# 1) define _lang_hint() before ask_llm (idempotent)
+if "def _lang_hint():" not in src:
+    src = src.replace("\ndef ask_llm(", "\n" + LANG_HINT_FN + "\ndef ask_llm(", 1)
+    changed = True
+    print("core.py: _lang_hint added")
+
+# 2) cloud path: inject the language hint into the system message
+old_sys = '{"role": "system", "content": JARVIS_SYS}'
+new_sys = '{"role": "system", "content": JARVIS_SYS + _lang_hint()}'
+if old_sys in src:
+    n = src.count(old_sys)
+    src = src.replace(old_sys, new_sys)
+    changed = True
+    print("core.py: language hint wired into cloud brain (", n, "site(s) )")
+
+# 3) local ollama path: inject hint into prompt + system
+old_full = '        full = JARVIS_SYS + ("\\n\\nRecent conversation:\\n" + ctx if ctx else "") + "\\n\\nUser: " + prompt'
+new_full = '        full = JARVIS_SYS + _lang_hint() + ("\\n\\nRecent conversation:\\n" + ctx if ctx else "") + "\\n\\nUser: " + prompt'
+if old_full in src:
+    src = src.replace(old_full, new_full, 1)
+    changed = True
+    print("core.py: language hint wired into local ollama prompt")
+
+old_ollsys = 'json={"model": OLLAMA_MODEL, "system": JARVIS_SYS, "prompt": full, "stream": False}'
+new_ollsys = 'json={"model": OLLAMA_MODEL, "system": JARVIS_SYS + _lang_hint(), "prompt": full, "stream": False}'
+if old_ollsys in src:
+    src = src.replace(old_ollsys, new_ollsys, 1)
+    changed = True
+    print("core.py: language hint wired into local ollama system")
+
+# 3b) fix router: exact keyword match must pass empty args, not the full command
+old_router = ('    for name, meta, fn in entries:\n'
+              '        for kw in meta.get("keywords", []):\n'
+              '            if low == kw.lower():\n'
+              '                return run_skill(name, meta, fn, t)')
+new_router = ('    for name, meta, fn in entries:\n'
+              '        for kw in meta.get("keywords", []):\n'
+              '            if low == kw.lower():\n'
+              '                return run_skill(name, meta, fn, "")')
+if old_router in src:
+    src = src.replace(old_router, new_router, 1)
+    print("core.py: router exact-match fixed (bare commands like 'lang'/'brain' now reach their skill correctly)")
+elif 'return run_skill(name, meta, fn, "")' not in src:
+    print("WARNING: router exact-match block not found - bare-word commands may misfire")
+
+open(CORE, "w").write(src)
+try:
+    py_compile.compile(CORE, doraise=True)
+    print("core.py COMPILES OK")
+except Exception as e:
+    shutil.copy(BAK, CORE)
+    print("PATCH FAILED - restored backup:", e)
+    raise SystemExit(1)
+
+# 4) add lang skill
+os.makedirs(os.path.join(J, "skills"), exist_ok=True)
+open(os.path.join(J, "skills", "lang.py"), "w").write(LANG_SKILL)
+print("lang skill added (30 languages)")
+
+# 5) restart JARVIS
+import time, subprocess, urllib.request
+PY = "python3"
+vp = os.path.expanduser("~/omni-jarvis/venv/bin/python")
+if os.path.exists(vp):
+    PY = vp
+subprocess.run(["pkill", "-f", "core.py"])
+time.sleep(1)
+log = open("/tmp/jarvis.log", "w")
+subprocess.Popen([PY, CORE], stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+time.sleep(2)
+try:
+    h = urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=5).read().decode()
+    print("HEALTH:", h)
+except Exception as e:
+    print("CHECK FAILED:", e, "- see /tmp/jarvis.log")
+PYEOF
+
+sleep 1
+curl -s --max-time 5 http://127.0.0.1:8000/health && echo " JARVIS UP" || echo "DOWN - cat /tmp/jarvis.log"
+JARVIS_EOF

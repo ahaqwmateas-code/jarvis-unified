@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# Android / Java
+*.class
+*.keystore
+*.jks
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+
+# Runtime artifacts
+/tmp/

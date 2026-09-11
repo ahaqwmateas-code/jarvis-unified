@@ -1,0 +1,205 @@
+bash -s << 'JARVIS_EOF'
+set -e
+cat > ~/.jarvis/skills/build.py << 'BEOF'
+import os, re, json, time, subprocess
+
+SKILL = {
+    "name": "build",
+    "description": "build <describe the app> - AI writes a whole app (cloud if key, else tiny local model)",
+    "keywords": ["build", "develop", "make app", "create app", "write app", "app builder"],
+}
+
+OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
+CFG_PATH = os.path.expanduser("~/.jarvis/brain.json")
+
+SPEC = (
+    "You are a senior software engineer. Build a small, COMPLETE, working "
+    "application based on the user's description.\n\n"
+    "Respond with JSON only (no markdown, no backticks) in exactly this shape:\n"
+    '{"name": "snake_name", "description": "one line", '
+    '"files": [{"path": "index.html", "content": "full file contents"}], '
+    '"run": "shell command to run the app"}\n\n'
+    "Rules:\n"
+    "- Prefer a single self-contained HTML file with inline CSS/JS. Otherwise "
+    "Python standard library only.\n"
+    "- Every file must be complete and runnable. No '...' or 'TODO'.\n"
+    "- Keep it small: 1-2 files.\n"
+    "- The 'run' field is the exact command to start the app.\n\n"
+    "User request: "
+)
+
+
+def _cfg():
+    try:
+        return json.load(open(CFG_PATH))
+    except Exception:
+        return {}
+
+
+def _groq(prompt, timeout=180):
+    key = os.environ.get("GROQ_API_KEY", "") or _cfg().get("key", "")
+    if not key or _cfg().get("mode") == "local":
+        return None
+    model = _cfg().get("model") or os.environ.get("GROQ_MODEL") or "llama-3.3-70b-versatile"
+    try:
+        import requests
+        r = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"},
+            json={"model": model,
+                  "messages": [{"role": "user", "content": prompt}],
+                  "max_tokens": 4096, "temperature": 0.3},
+            timeout=timeout,
+        )
+        if r.status_code == 200:
+            return r.json()["choices"][0]["message"]["content"].strip()
+    except Exception:
+        pass
+    return None
+
+
+def _ollama(prompt, model="deepseek-coder:latest", timeout=240):
+    try:
+        import requests
+        r = requests.post(
+            OLLAMA_URL + "/api/generate",
+            json={"model": model, "prompt": prompt, "stream": False,
+                  "options": {"temperature": 0.3, "num_predict": 4096}},
+            timeout=timeout,
+        )
+        if r.status_code == 200:
+            return r.json().get("response", "").strip()
+    except Exception:
+        pass
+    return None
+
+
+def _generate(desc):
+    # 1) cloud brain if available
+    out = _groq(SPEC + desc)
+    if out:
+        return out, "cloud"
+    # 2) tiny local coder (safe on phone RAM)
+    out = _ollama(SPEC + desc)
+    if out:
+        return out, "local"
+    return None, "none"
+
+
+def _strip_fences(s):
+    s = s.strip()
+    if s.startswith("```"):
+        s = re.sub(r"^```[a-zA-Z]*\s*\n?", "", s)
+        s = re.sub(r"\n?```\s*$", "", s)
+    return s.strip()
+
+
+def _parse(raw):
+    raw = _strip_fences(raw)
+    # try straight JSON
+    try:
+        return json.loads(raw), None
+    except Exception:
+        pass
+    # try extracting the outermost {...} block
+    a, b = raw.find("{"), raw.rfind("}")
+    if a != -1 and b > a:
+        try:
+            return json.loads(raw[a:b + 1]), None
+        except Exception:
+            pass
+    # HTML fallback
+    m = re.search(r"(?is)(<!DOCTYPE html>|<html)", raw)
+    if m:
+        html = raw[m.start():]
+        return {"name": "webapp", "description": "web app",
+                "files": [{"path": "index.html", "content": html}],
+                "run": "python3 -m http.server 8100"}, None
+    return None, "model returned neither JSON nor HTML"
+
+
+def _slug(name):
+    s = re.sub(r"[^a-z0-9_-]", "", name.lower())[:40]
+    return s or "app"
+
+
+def _safe_join(base, path):
+    path = str(path).replace("\\", "/")
+    while path.startswith("/"):
+        path = path[1:]
+    parts = [p for p in path.split("/") if p not in ("", ".", "..")]
+    return os.path.join(base, *parts)
+
+
+def run(args, ctx):
+    a = args.strip()
+    if a.lower() in ("list", "ls"):
+        root = os.path.expanduser("~/jarvis-apps")
+        if not os.path.isdir(root):
+            return "No apps built yet. Try: build a to-do list web app"
+        names = sorted(os.listdir(root))
+        return "Built apps:\n" + ("\n".join("- " + n for n in names) if names else "(empty)")
+    if not a:
+        return "Usage: build <describe the app you want>\nExample: build a countdown timer web app"
+
+    raw, src = _generate(a)
+    if raw is None:
+        return ("Brain offline: no Groq key AND no Ollama. "
+                "Add a free key: brain key gsk_... (console.groq.com), "
+                "or start Ollama: nohup ollama serve > /tmp/ollama.log 2>&1 &")
+
+    spec, err = _parse(raw)
+    if err:
+        return "Could not parse model output (" + err + "). Simplify and try again."
+
+    files = spec.get("files") or []
+    if not files:
+        return "Model returned no files. Simplify the request and try again."
+
+    name = _slug(str(spec.get("name") or a.split()[0]))
+    root = os.path.expanduser("~/jarvis-apps")
+    proj = os.path.join(root, name)
+    if os.path.exists(proj):
+        proj = os.path.join(root, name + "_" + str(int(time.time()))[-4:])
+        name = os.path.basename(proj)
+    os.makedirs(proj, exist_ok=True)
+
+    written = []
+    for f in files:
+        p = _safe_join(proj, f.get("path", "file.txt"))
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w") as fh:
+            fh.write(str(f.get("content", "")))
+        written.append(p)
+
+    runcmd = str(spec.get("run", "")).strip() or "python3 app.py"
+    runsh = os.path.join(proj, "run.sh")
+    with open(runsh, "w") as fh:
+        fh.write('#!/bin/bash\ncd "$(dirname "$0")"\n' + runcmd + "\n")
+    os.chmod(runsh, 0o755)
+
+    ip = None
+    try:
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+    except Exception:
+        ip = "YOUR_LAN_IP"
+
+    lines = ["Built app '" + name + "' via " + src + " brain", "Location: " + proj]
+    for w in written:
+        lines.append("  - " + os.path.relpath(w, proj))
+    if any(w.endswith(".html") for w in written):
+        lines.append("Run web app:  cd " + proj + " && python3 -m http.server 8100")
+        lines.append("  then open:  http://" + ip + ":8100")
+    else:
+        lines.append("Run:  bash " + runsh)
+    lines.append("About: " + str(spec.get("description", "")))
+    return "\n".join(lines)
+BEOF
+
+python3 -m py_compile ~/.jarvis/skills/build.py && echo 'BUILD V2 COMPILES OK'
+curl -s --max-time 5 http://127.0.0.1:8000/api/skills | python3 -c "import sys,json; print('SKILLS:', [s['name'] for s in json.load(sys.stdin)])"
+JARVIS_EOF

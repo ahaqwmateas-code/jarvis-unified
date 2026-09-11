@@ -1,0 +1,188 @@
+bash -s << 'JARVIS_EOF'
+set -e
+J=~/.jarvis
+mkdir -p "$J"
+
+cat > "$J/gen_cert.sh" << 'CERTEOF'
+#!/bin/bash
+# Generate a self-signed HTTPS cert for JARVIS Voice (IP-aware)
+set -e
+DIR=~/.jarvis/certs
+mkdir -p "$DIR"
+
+IP=$(ip addr show 2>/dev/null | grep -w inet | grep -v 127.0.0.1 | awk '{print $2}' | cut -d/ -f1 | head -1)
+if [ -z "$IP" ]; then
+  IP=$(hostname -I 2>/dev/null | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -1)
+fi
+[ -z "$IP" ] && IP=192.168.1.109
+
+openssl req -x509 -newkey rsa:2048 -nodes \
+  -keyout "$DIR/key.pem" -out "$DIR/cert.pem" \
+  -days 825 -subj "/CN=JARVIS" \
+  -addext "subjectAltName=IP:$IP,IP:127.0.0.1,DNS:localhost" \
+  2>/dev/null
+
+echo "HTTPS cert ready (valid for IP $IP). Open: https://$IP:8443"
+CERTEOF
+chmod +x "$J/gen_cert.sh"
+
+cat > "$J/voice.py" << 'VOICEEOF'
+import http.server, ssl, json, urllib.request, socket, os, sys
+
+PORT = 8443
+UPSTREAM = "http://127.0.0.1:8000"
+CERT_DIR = os.path.expanduser("~/.jarvis/certs")
+
+
+def get_ip():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
+
+HTML = r"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JARVIS Voice</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#05080c;color:#33d17a;font-family:ui-monospace,Menlo,Consolas,monospace;height:100vh;display:flex;flex-direction:column}
+#top{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid #123;background:#071019}
+#top .t{font-weight:bold;letter-spacing:2px;font-size:13px}
+#top .st{font-size:11px;color:#3d7a5a;margin-left:auto}
+#log{flex:1;overflow-y:auto;padding:16px;white-space:pre-wrap;font-size:13px;line-height:1.5}
+.line{margin-bottom:8px}
+.u{color:#66e0ff}.j{color:#33d17a}.e{color:#ff6b6b}
+#bar{display:flex;border-top:1px solid #123;background:#071019;align-items:center}
+#inp{flex:1;background:transparent;border:none;outline:none;color:#33d17a;font-family:inherit;font-size:14px;padding:14px}
+#btn{background:#0f2;color:#002;border:none;padding:14px 18px;font-family:inherit;font-weight:bold;font-size:13px}
+#mic{background:#0f2;color:#002;border:none;padding:14px;font-size:22px;border-radius:50%;width:54px;height:54px;margin:0 6px;cursor:pointer;line-height:1}
+#mic.on{background:#ff5252;color:#fff;animation:pulse .8s infinite}
+@keyframes pulse{50%{opacity:.6}}
+#hint{padding:6px 14px;font-size:11px;color:#3d7a5a;border-bottom:1px solid #123}
+</style>
+</head>
+<body>
+<div id="top"><span class="t">JARVIS VOICE</span><span class="st" id="st">HTTPS</span></div>
+<div id="hint">Tap the mic, speak, and JARVIS answers out loud. (Mic needs this HTTPS page + internet.)</div>
+<div id="log"><div class="line j">Voice channel online. Tap the mic or type below.</div></div>
+<div id="bar">
+  <input id="inp" placeholder="type or speak..." autocomplete="off"/>
+  <button id="mic" title="Tap and speak">&#127908;</button>
+  <button id="btn" onclick="submit()">SEND</button>
+</div>
+<script>
+var log=document.getElementById('log'), inp=document.getElementById('inp');
+function print(c,t){var d=document.createElement('div');d.className='line '+c;d.textContent=t;log.appendChild(d);log.scrollTop=log.scrollHeight;}
+function speak(t){try{window.speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(t.replace(/[#*_`>]/g,''));u.rate=1.05;window.speechSynthesis.speak(u);}catch(e){}}
+function send(cmd){
+  print('u','you> '+cmd);
+  fetch('/api/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:cmd,token:localStorage.getItem('token')||''})})
+  .then(function(r){return r.json()})
+  .then(function(d){var rep=d.reply||JSON.stringify(d);print('j','jarvis> '+rep);speak(rep);})
+  .catch(function(e){print('e','error: '+e)});
+}
+function submit(){var v=inp.value.trim();if(!v)return;inp.value='';send(v);}
+inp.addEventListener('keydown',function(e){if(e.key==='Enter')submit()});
+var mic=document.getElementById('mic');
+var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+var rec=null;
+if(SR){
+  rec=new SR();rec.lang='en-US';rec.interimResults=false;
+  rec.onstart=function(){mic.classList.add('on')};
+  rec.onend=function(){mic.classList.remove('on')};
+  rec.onerror=function(e){mic.classList.remove('on');print('e','mic error: '+e.error)};
+  rec.onresult=function(e){var t=e.results[0][0].transcript;inp.value=t;send(t);};
+}else{
+  mic.style.background='#333';mic.title='Speech recognition not supported in this browser';
+}
+mic.addEventListener('click',function(){
+  if(!rec){print('e','No speech recognition support (use Chrome).');return;}
+  try{rec.start()}catch(e){print('e','mic start error: '+e)}
+});
+</script>
+</body>
+</html>
+"""
+
+
+class H(http.server.BaseHTTPRequestHandler):
+    def _json(self, obj):
+        b = json.dumps(obj).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(b)))
+        self.end_headers()
+        self.wfile.write(b)
+
+    def do_GET(self):
+        if self.path in ("/", "/index.html"):
+            b = HTML.encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+        elif self.path == "/health":
+            self._json({"voice": True, "upstream": UPSTREAM})
+        else:
+            self.send_error(404)
+
+    def do_POST(self):
+        if self.path == "/api/command":
+            n = int(self.headers.get("Content-Length") or 0)
+            body = self.rfile.read(n)
+            req = urllib.request.Request(UPSTREAM + "/api/command", data=body,
+                                         headers={"Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(req, timeout=180) as r:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(r.read())
+            except Exception as e:
+                self._json({"ok": False, "reply": "JARVIS backend unreachable: " + str(e)})
+        else:
+            self.send_error(404)
+
+    def log_message(self, *a):
+        pass
+
+
+def main():
+    cert = os.path.join(CERT_DIR, "cert.pem")
+    key = os.path.join(CERT_DIR, "key.pem")
+    if not (os.path.exists(cert) and os.path.exists(key)):
+        print("No HTTPS cert. Run: bash ~/.jarvis/gen_cert.sh")
+        sys.exit(1)
+    srv = http.server.ThreadingHTTPServer(("0.0.0.0", PORT), H)
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(cert, key)
+    srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
+    print("JARVIS Voice on https://%s:%d" % (get_ip(), PORT))
+    srv.serve_forever()
+
+
+if __name__ == "__main__":
+    main()
+VOICEEOF
+
+# generate the HTTPS cert (detects your LAN IP)
+bash "$J/gen_cert.sh"
+
+# start the voice channel
+pgrep -f "$J/voice.py" >/dev/null 2>&1 || nohup python3 "$J/voice.py" > /tmp/voice.log 2>&1 &
+
+# add voice to auto-start (appends one line to start.sh if not there)
+grep -q "voice.py" "$J/start.sh" 2>/dev/null || echo 'pgrep -f "$HOME/.jarvis/voice.py" >/dev/null 2>&1 || nohup python3 "$HOME/.jarvis/voice.py" > /tmp/voice.log 2>&1 &' >> "$J/start.sh"
+
+sleep 2
+curl -sk --max-time 5 https://127.0.0.1:8443/health && echo " VOICE CHANNEL UP" || echo "VOICE DOWN - cat /tmp/voice.log"
+JARVIS_EOF

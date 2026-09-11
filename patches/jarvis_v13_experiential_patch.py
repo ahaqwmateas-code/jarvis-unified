@@ -1,0 +1,262 @@
+import os, re, json, time, subprocess, shutil, py_compile
+
+J = os.path.expanduser("~/.jarvis")
+CORE = os.path.join(J, "core.py")
+BAK = CORE + ".bak2"
+
+PY = "python3"
+vp = os.path.expanduser("~/omni-jarvis/venv/bin/python")
+if os.path.exists(vp):
+    PY = vp
+
+CLOUD_BLOCK = r'''
+def _detect_provider(key):
+    k = (key or "").strip()
+    if k.startswith("gsk_"):
+        return "groq"
+    if k.startswith("sk-ant-"):
+        return "anthropic"
+    if k.startswith("AIza"):
+        return "google"
+    if k.startswith("sk-or-"):
+        return "openrouter"
+    if k.startswith("xpl_"):
+        return "experiential"
+    if k.startswith("sk-"):
+        return "openai"
+    return None
+
+
+def ask_cloud(prompt):
+    cfg = _brain_cfg()
+    key = os.environ.get("BRAIN_API_KEY", "") or cfg.get("key", "")
+    if not key or cfg.get("mode") == "local":
+        return None
+    provider = cfg.get("provider") or _detect_provider(key)
+    try:
+        import requests
+        ctx = "\n".join(f"{r}: {t}" for r, t in HISTORY)
+        if provider in ("groq", "openai", "openrouter", "experiential"):
+            base = {
+                "groq": "https://api.groq.com/openai/v1",
+                "openai": "https://api.openai.com/v1",
+                "openrouter": "https://openrouter.ai/api/v1",
+                "experiential": cfg.get("base") or os.environ.get("EXPERIENTIAL_BASE", "https://api.experientiallabs.ai/v1"),
+            }[provider]
+            model = cfg.get("model") or {
+                "groq": "llama-3.3-70b-versatile",
+                "openai": "gpt-4o-mini",
+                "openrouter": "meta-llama/llama-3.1-8b-instruct:free",
+                "experiential": "gpt-4o-mini",
+            }[provider]
+            headers = {"Authorization": "Bearer " + key, "Content-Type": "application/json"}
+            if provider == "openrouter":
+                headers["HTTP-Referer"] = "http://localhost"
+                headers["X-Title"] = "Jarvis"
+            msgs = [{"role": "system", "content": JARVIS_SYS}]
+            if ctx:
+                msgs.append({"role": "user", "content": "Recent conversation:\n" + ctx[-2000:]})
+            msgs.append({"role": "user", "content": prompt})
+            r = requests.post(base + "/chat/completions", headers=headers,
+                              json={"model": model, "messages": msgs, "max_tokens": 1024, "temperature": 0.6},
+                              timeout=90)
+            if r.status_code == 200:
+                return r.json()["choices"][0]["message"]["content"].strip()
+        if provider == "anthropic":
+            model = cfg.get("model") or "claude-3-5-haiku-latest"
+            msgs = []
+            if ctx:
+                msgs.append({"role": "user", "content": "Recent conversation:\n" + ctx[-2000:]})
+            msgs.append({"role": "user", "content": prompt})
+            r = requests.post("https://api.anthropic.com/v1/messages",
+                              headers={"x-api-key": key, "anthropic-version": "2023-06-01",
+                                       "Content-Type": "application/json"},
+                              json={"model": model, "max_tokens": 1024, "system": JARVIS_SYS, "messages": msgs},
+                              timeout=90)
+            if r.status_code == 200:
+                return r.json().get("content", [{}])[0].get("text", "").strip()
+        if provider == "google":
+            model = cfg.get("model") or "gemini-2.0-flash"
+            r = requests.post(
+                "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + key,
+                json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=90)
+            if r.status_code == 200:
+                return r.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+    except Exception:
+        pass
+    return None
+'''
+
+BRAIN_SKILL = r'''import os, json
+
+SKILL = {
+    "name": "brain",
+    "description": "brain / brain key <key> / brain model <id> / brain base <url> / brain local",
+    "keywords": ["brain", "switch brain", "which model"],
+}
+
+CFG = os.path.expanduser("~/.jarvis/brain.json")
+
+
+def _detect(key):
+    k = (key or "").strip()
+    if k.startswith("gsk_"):
+        return "groq"
+    if k.startswith("sk-ant-"):
+        return "anthropic"
+    if k.startswith("AIza"):
+        return "google"
+    if k.startswith("sk-or-"):
+        return "openrouter"
+    if k.startswith("xpl_"):
+        return "experiential"
+    if k.startswith("sk-"):
+        return "openai"
+    return None
+
+
+def _default_model(p):
+    return {"groq": "llama-3.3-70b-versatile", "openai": "gpt-4o-mini",
+            "anthropic": "claude-3-5-haiku-latest", "google": "gemini-2.0-flash",
+            "openrouter": "meta-llama/llama-3.1-8b-instruct:free",
+            "experiential": "gpt-4o-mini"}.get(p, "")
+
+
+def _load():
+    try:
+        return json.load(open(CFG))
+    except Exception:
+        return {}
+
+
+def _save(c):
+    try:
+        json.dump(c, open(CFG, "w"))
+    except Exception:
+        pass
+
+
+def run(args, ctx):
+    a = args.strip()
+    cfg = _load()
+    low = a.lower()
+
+    if low.startswith("key "):
+        k = a[4:].strip()
+        cfg["key"] = k
+        cfg["mode"] = "cloud"
+        cfg["provider"] = _detect(k)
+        _save(cfg)
+        prov = cfg["provider"] or "unknown prefix"
+        return "Cloud brain activated: " + prov + ". Chat / build / make now use it."
+
+    if low in ("local", "ollama"):
+        cfg["mode"] = "local"
+        _save(cfg)
+        return "Brain: local (Ollama)."
+
+    if low.startswith("base "):
+        cfg["base"] = a[5:].strip()
+        _save(cfg)
+        return "Gateway base set to: " + cfg["base"] + "  (use for self-hosted experiential, e.g. brain base http://127.0.0.1:8080/v1)"
+
+    if low in ("cloud", "groq", "openai", "anthropic", "google", "openrouter", "experiential"):
+        if not (os.environ.get("BRAIN_API_KEY") or cfg.get("key")):
+            return "No key yet. Type: brain key <your key>  (any provider works - auto-detected)"
+        cfg["mode"] = "cloud"
+        if low != "cloud":
+            cfg["provider"] = low
+        _save(cfg)
+        return "Brain: cloud (" + (cfg.get("provider") or _detect(cfg.get("key")) or "auto") + ")."
+
+    if low.startswith("model "):
+        cfg["model"] = a[6:].strip()
+        _save(cfg)
+        return "Cloud model set to: " + cfg["model"]
+
+    key = os.environ.get("BRAIN_API_KEY", "") or cfg.get("key", "")
+    prov = cfg.get("provider") or _detect(key)
+    if prov:
+        model = cfg.get("model") or _default_model(prov)
+        return "Brain: cloud (" + prov + ")\nCloud model: " + model
+    return "Brain: local (Ollama)\n(no cloud key set - type 'brain key <key>' for any provider)"
+'''
+
+src = open(CORE).read()
+changed = False
+shutil.copy(CORE, BAK)
+
+# 1) ensure _brain_cfg exists
+if "def _brain_cfg():" not in src:
+    cfg_fn = r'''
+def _brain_cfg():
+    try:
+        return json.load(open(os.path.join(APP_DIR, "brain.json")))
+    except Exception:
+        return {}
+'''
+    anchor = "\ndef ask_llm("
+    if anchor in src:
+        src = src.replace(anchor, cfg_fn + "\n" + anchor, 1)
+        changed = True
+
+# 2) insert/extend ask_cloud (multi-provider incl experiential)
+if "def ask_cloud(" not in src:
+    if "def ask_groq(" in src:
+        # proven method: insert full block BEFORE the old groq-only fn (old fn stays, harmless)
+        src = src.replace("def ask_groq(", CLOUD_BLOCK + "\ndef ask_groq(", 1)
+    else:
+        anchor = "\ndef ask_llm("
+        if anchor in src:
+            src = src.replace(anchor, "\n" + CLOUD_BLOCK + anchor, 1)
+    changed = True
+    print("core.py: multi-provider ask_cloud (incl experiential) added")
+else:
+    # ask_cloud already exists - just make sure experiential is in it
+    if '"experiential"' not in src:
+        src = src.replace('provider in ("groq", "openai", "openrouter")',
+                          'provider in ("groq", "openai", "openrouter", "experiential")')
+        src = src.replace('"openrouter": "https://openrouter.ai/api/v1",',
+                          '"openrouter": "https://openrouter.ai/api/v1",\n                "experiential": cfg.get("base") or os.environ.get("EXPERIENTIAL_BASE", "https://api.experientiallabs.ai/v1"),')
+        src = src.replace('"openrouter": "meta-llama/llama-3.1-8b-instruct:free",',
+                          '"openrouter": "meta-llama/llama-3.1-8b-instruct:free",\n                "experiential": "gpt-4o-mini",')
+        src = src.replace('if k.startswith("sk-or-"):\n        return "openrouter"',
+                          'if k.startswith("sk-or-"):\n        return "openrouter"\n    if k.startswith("xpl_"):\n        return "experiential"')
+        print("core.py: experiential added to existing ask_cloud")
+    else:
+        print("core.py: experiential already present")
+
+# 3) rewire ask_llm to try cloud first
+src2 = src.replace("ans = ask_groq(prompt)", "ans = ask_cloud(prompt)")
+if src2 != src:
+    print("core.py: ask_llm now tries cloud brain first")
+    src = src2
+    changed = True
+
+open(CORE, "w").write(src)
+try:
+    py_compile.compile(CORE, doraise=True)
+    print("core.py COMPILES OK")
+except Exception as e:
+    shutil.copy(BAK, CORE)
+    print("PATCH FAILED - restored backup:", e)
+    raise SystemExit(1)
+
+# 4) rewrite brain skill
+os.makedirs(os.path.join(J, "skills"), exist_ok=True)
+open(os.path.join(J, "skills", "brain.py"), "w").write(BRAIN_SKILL)
+print("brain skill upgraded (multi-provider + experiential)")
+
+# 5) restart
+subprocess.run(["pkill", "-f", "core.py"])
+time.sleep(1)
+log = open("/tmp/jarvis.log", "w")
+subprocess.Popen([PY, CORE], stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+time.sleep(2)
+
+import urllib.request
+try:
+    h = urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=5).read().decode()
+    print("HEALTH:", h)
+except Exception as e:
+    print("CHECK FAILED:", e, "- see /tmp/jarvis.log")

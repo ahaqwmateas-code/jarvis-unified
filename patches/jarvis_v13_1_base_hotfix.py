@@ -1,0 +1,72 @@
+import os, json, py_compile
+
+J = os.path.expanduser("~/.jarvis")
+CORE = os.path.join(J, "core.py")
+SKILL = os.path.join(J, "skills", "brain.py")
+
+# ---- 1) core.py: if a self-hosted gateway base is set, treat it as experiential
+src = open(CORE).read()
+old = '    provider = cfg.get("provider") or _detect_provider(key)\n    try:\n        import requests'
+new = ('    provider = cfg.get("provider") or _detect_provider(key)\n'
+       '    if provider is None and cfg.get("base"):\n'
+       '        provider = "experiential"\n'
+       '    try:\n'
+       '        import requests')
+if old in src:
+    src = src.replace(old, new, 1)
+    open(CORE, "w").write(src)
+    print("core.py: base -> experiential fallback added")
+else:
+    print("core.py: base fallback already present (or pattern not found)")
+
+# ---- 2) brain skill: key branch + status branch honor 'base'
+sk = open(SKILL).read()
+a_old = ('        cfg["provider"] = _detect(k)\n        _save(cfg)\n'
+         '        prov = cfg["provider"] or "unknown prefix"')
+a_new = ('        cfg["provider"] = _detect(k)\n'
+         '        if cfg["provider"] is None and cfg.get("base"):\n'
+         '            cfg["provider"] = "experiential"\n'
+         '        _save(cfg)\n'
+         '        prov = cfg["provider"] or ("experiential gateway" if cfg.get("base") else "unknown prefix")')
+if a_old in sk:
+    sk = sk.replace(a_old, a_new, 1)
+    print("brain skill: key branch honors base")
+else:
+    print("brain skill: key branch pattern not found")
+
+b_old = '    prov = cfg.get("provider") or _detect(key)\n    if prov:'
+b_new = ('    prov = cfg.get("provider") or _detect(key)\n'
+         '    if prov is None and cfg.get("base"):\n'
+         '        prov = "experiential"\n'
+         '    if prov:')
+if b_old in sk:
+    sk = sk.replace(b_old, b_new, 1)
+    print("brain skill: status branch honors base")
+else:
+    print("brain skill: status branch pattern not found")
+
+open(SKILL, "w").write(sk)
+
+try:
+    py_compile.compile(CORE, doraise=True)
+    print("core.py COMPILES OK")
+except Exception as e:
+    print("PATCH FAILED:", e)
+    raise SystemExit(1)
+
+# ---- 3) restart JARVIS so the changes take effect
+import time, subprocess, urllib.request
+PY = "python3"
+vp = os.path.expanduser("~/omni-jarvis/venv/bin/python")
+if os.path.exists(vp):
+    PY = vp
+subprocess.run(["pkill", "-f", "core.py"])
+time.sleep(1)
+log = open("/tmp/jarvis.log", "w")
+subprocess.Popen([PY, CORE], stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+time.sleep(2)
+try:
+    h = urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=5).read().decode()
+    print("HEALTH:", h)
+except Exception as e:
+    print("CHECK FAILED:", e, "- see /tmp/jarvis.log")

@@ -1,0 +1,200 @@
+bash -s << 'JARVIS_EOF'
+set -e
+J=~/.jarvis
+PY=$(command -v python3)
+[ -x ~/omni-jarvis/venv/bin/python ] && PY=~/omni-jarvis/venv/bin/python
+
+"$PY" - << 'PYEOF'
+import os, re, json, time, subprocess, shutil, py_compile
+
+J = os.path.expanduser("~/.jarvis")
+CORE = os.path.join(J, "core.py")
+BAK = CORE + ".bak"
+
+PY = "python3"
+vp = os.path.expanduser("~/omni-jarvis/venv/bin/python")
+if os.path.exists(vp):
+    PY = vp
+
+BRAIN_SKILL = r'''import os, json
+
+SKILL = {
+    "name": "brain",
+    "description": "brain / brain key gsk_xxx / brain local / brain groq",
+    "keywords": ["brain", "switch brain", "which model"],
+}
+
+CFG = os.path.expanduser("~/.jarvis/brain.json")
+
+
+def _load():
+    try:
+        return json.load(open(CFG))
+    except Exception:
+        return {}
+
+
+def _save(c):
+    try:
+        json.dump(c, open(CFG, "w"))
+    except Exception:
+        pass
+
+
+def run(args, ctx):
+    a = args.strip().lower()
+    cfg = _load()
+    if a.startswith("key "):
+        k = a[4:].strip()
+        cfg["key"] = k
+        cfg["mode"] = "groq"
+        _save(cfg)
+        return "Cloud brain activated (Groq). Chat / make / build now use it."
+    if a in ("groq", "cloud"):
+        if not (os.environ.get("GROQ_API_KEY") or cfg.get("key")):
+            return "No Groq key yet. Get a free one at console.groq.com then type: brain key gsk_..."
+        cfg["mode"] = "groq"
+        _save(cfg)
+        return "Brain: cloud (Groq)."
+    if a in ("local", "ollama"):
+        cfg["mode"] = "local"
+        _save(cfg)
+        return "Brain: local (Ollama)."
+    if a.startswith("model "):
+        cfg["model"] = a[6:].strip()
+        _save(cfg)
+        return "Cloud model set to: " + cfg["model"]
+    has_key = bool(os.environ.get("GROQ_API_KEY") or cfg.get("key"))
+    mode = "cloud (Groq)" if (has_key and cfg.get("mode") != "local") else "local (Ollama)"
+    model = cfg.get("model") or os.environ.get("GROQ_MODEL") or "llama-3.3-70b-versatile"
+    return "Brain: " + mode + "\nCloud model: " + model
+'''
+
+GROQ_BLOCK = r'''
+def _brain_cfg():
+    try:
+        return json.load(open(os.path.join(APP_DIR, "brain.json")))
+    except Exception:
+        return {}
+
+
+def ask_groq(prompt):
+    cfg = _brain_cfg()
+    key = os.environ.get("GROQ_API_KEY", "") or cfg.get("key", "")
+    if not key:
+        return None
+    if cfg.get("mode") == "local":
+        return None
+    model = cfg.get("model") or os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+    try:
+        import requests
+        msgs = [{"role": "system", "content": JARVIS_SYS}]
+        ctx = "\n".join(f"{r}: {t}" for r, t in HISTORY)
+        if ctx:
+            msgs.append({"role": "user", "content": "Recent conversation:\n" + ctx[-2000:]})
+        msgs.append({"role": "user", "content": prompt})
+        r = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"},
+            json={"model": model, "messages": msgs, "max_tokens": 1024, "temperature": 0.6},
+            timeout=90,
+        )
+        if r.status_code == 200:
+            return r.json()["choices"][0]["message"]["content"].strip()
+    except Exception:
+        pass
+    return None
+'''
+
+NEW_LOOP = """    # skill keyword routing: exact -> prefix -> substring
+    skills = load_skills()
+    entries = [(n, m, fn) for n, (m, fn) in skills.items() if fn]
+
+    def run_skill(name, meta, fn, arg):
+        try:
+            return fn(arg, {"app_dir": APP_DIR, "notes_dir": NOTES_DIR, "llm": ask_llm})
+        except Exception as e:
+            return "Skill '" + name + "' error: " + str(e)
+
+    for name, meta, fn in entries:
+        for kw in meta.get("keywords", []):
+            if low == kw.lower():
+                return run_skill(name, meta, fn, t)
+    for name, meta, fn in entries:
+        for kw in meta.get("keywords", []):
+            kwl = kw.lower()
+            if low.startswith(kwl + " "):
+                return run_skill(name, meta, fn, t[len(kw):].strip())
+    for name, meta, fn in entries:
+        for kw in meta.get("keywords", []):
+            if (" " + kw.lower()) in (" " + low):
+                return run_skill(name, meta, fn, t)
+"""
+
+src = open(CORE).read()
+changed = False
+
+# ---- 1) add groq brain ----
+if "def ask_groq(" not in src:
+    shutil.copy(CORE, BAK)
+    anchor = "\ndef ask_llm("
+    if anchor in src:
+        src = src.replace(anchor, GROQ_BLOCK + "\n" + anchor, 1)
+        pat = re.compile(r'(def ask_llm\(prompt\):\n)(\s*)')
+        m = pat.search(src)
+        if m:
+            ind = m.group(2) or "    "
+            ins = m.group(1) + ind + "ans = ask_groq(prompt)\n" + ind + "if ans is not None:\n" + ind + "    return ans\n" + ind
+            src = src[:m.start()] + ins + src[m.end():]
+        changed = True
+        print("core.py: cloud brain added")
+    else:
+        print("WARNING: ask_llm not found - cloud brain skipped")
+else:
+    print("core.py: cloud brain already present")
+
+# ---- 2) fix keyword router (exact -> prefix -> substring) ----
+pat = re.compile(r'(    # skill keyword routing\n)(.*?)(\n    # LLM)', re.S)
+m = pat.search(src)
+if m:
+    src = pat.sub(lambda mm: mm.group(1) + NEW_LOOP + mm.group(3), src, count=1)
+    print("core.py: router fixed (exact > prefix > substring)")
+else:
+    print("WARNING: router block not found - leaving as-is")
+
+if changed or m:
+    open(CORE, "w").write(src)
+    try:
+        py_compile.compile(CORE, doraise=True)
+        print("core.py COMPILES OK")
+    except Exception as e:
+        shutil.copy(BAK, CORE)
+        print("PATCH FAILED - restored backup:", e)
+
+# ---- 3) write brain skill ----
+os.makedirs(os.path.join(J, "skills"), exist_ok=True)
+open(os.path.join(J, "skills", "brain.py"), "w").write(BRAIN_SKILL)
+print("brain skill written")
+
+# ---- 4) restart ----
+subprocess.run(["pkill", "-f", "core.py"])
+time.sleep(1)
+log = open("/tmp/jarvis.log", "w")
+subprocess.Popen([PY, CORE], stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+time.sleep(2)
+
+import urllib.request
+try:
+    h = urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=5).read().decode()
+    print("HEALTH:", h)
+    s = urllib.request.urlopen("http://127.0.0.1:8000/api/skills", timeout=5).read().decode()
+    names = [x["name"] for x in json.loads(s)]
+    print("SKILLS:", names)
+    print("brain present:", "brain" in names)
+except Exception as e:
+    print("CHECK FAILED:", e, "- see /tmp/jarvis.log")
+PYEOF
+
+sleep 1
+curl -s --max-time 5 http://127.0.0.1:8000/health && echo " JARVIS UP" || echo "DOWN - cat /tmp/jarvis.log"
+JARVIS_EOF
