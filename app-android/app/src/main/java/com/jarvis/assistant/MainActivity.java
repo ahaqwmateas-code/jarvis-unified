@@ -54,7 +54,7 @@ public class MainActivity extends Activity {
         super.onCreate(b);
         prefs = getSharedPreferences("jarvis", MODE_PRIVATE);
         brain = new Brain(this);
-        skills = new Skills(this);
+        skills = new Skills(this, brain);
         setContentView(buildUI());
 
         messages.add(new ChatMessage(ChatMessage.ASSISTANT,
@@ -165,6 +165,12 @@ public class MainActivity extends Activity {
         chips.addView(chip("Image", "image ", true));
         chips.addView(chip("Notes", "note list", false));
         chips.addView(chip("Remind", "remind me in 10 minutes to ", true));
+        chips.addView(chip("System", "system", false));
+        chips.addView(chip("Network", "network", false));
+        chips.addView(chip("Lang", "lang list", false));
+        chips.addView(chip("Build", "build ", true));
+        chips.addView(chip("Video", "video", false));
+        chips.addView(chip("Brain", "brain status", false));
         chips.addView(chip("Personas", "persona list", false));
         chips.addView(chip("Help", "help", false));
         hsv.addView(chips);

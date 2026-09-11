@@ -17,7 +17,7 @@ import android.widget.Toast;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Settings: free API keys, local Ollama URL, JARVIS core URL. */
+/** Settings: every connected AI provider + local Ollama + JARVIS core URL. */
 public class SettingsActivity extends Activity {
     private static class Field { String key; String label; EditText e; }
 
@@ -40,24 +40,30 @@ public class SettingsActivity extends Activity {
         sv.addView(root);
 
         TextView title = new TextView(this);
-        title.setText("JARVIS — Settings");
+        title.setText("JARVIS - Settings");
         title.setTextColor(Color.rgb(51, 209, 122));
         title.setTextSize(20);
         title.setTypeface(null, Typeface.BOLD);
         root.addView(title);
 
         TextView sub = new TextView(this);
-        sub.setText("Free keys:\nGroq groq.com · Gemini aistudio.google.com · OpenRouter openrouter.ai · Cerebras cloud.cerebras.ai · Mistral console.mistral.ai\n\nLeave everything empty and JARVIS still answers using the free anonymous brain.");
+        sub.setText("Free keys:\nGroq groq.com | Gemini aistudio.google.com | OpenRouter openrouter.ai | Cerebras cloud.cerebras.ai | Mistral console.mistral.ai | xAI x.ai | DeepSeek platform.deepseek.com | GitHub Models github.com/settings/tokens\n\nCustom provider: any OpenAI-compatible API (base URL + key + model).\n\nLeave everything empty and JARVIS still answers using the free anonymous brain.");
         sub.setTextColor(Color.rgb(140, 160, 150));
         sub.setTextSize(12);
         sub.setPadding(0, dp(6), 0, dp(16));
         root.addView(sub);
 
-        addField(root, "groq_key", "Groq API key (gsk_…)");
-        addField(root, "gemini_key", "Google Gemini key (AIza…)");
-        addField(root, "openrouter_key", "OpenRouter key (sk-or-…)");
+        addField(root, "groq_key", "Groq API key (gsk_)");
+        addField(root, "gemini_key", "Google Gemini key (AIza)");
+        addField(root, "openrouter_key", "OpenRouter key (sk-or-)");
         addField(root, "cerebras_key", "Cerebras key");
         addField(root, "mistral_key", "Mistral key");
+        addField(root, "xai_key", "xAI / Grok key");
+        addField(root, "deepseek_key", "DeepSeek key");
+        addField(root, "github_key", "GitHub Models key (ghp_)");
+        addField(root, "custom_base", "Custom base URL (e.g. https://api.example.com/v1)");
+        addField(root, "custom_key", "Custom provider key");
+        addField(root, "custom_model", "Custom provider model (e.g. model-name)");
         addField(root, "ollama_url", "Local Ollama URL (optional)");
         addField(root, "server_url", "JARVIS Core server URL");
 
@@ -127,7 +133,7 @@ public class SettingsActivity extends Activity {
 
     private void testBrain() {
         save();
-        Toast.makeText(this, "Testing brain…", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "Testing brain...", Toast.LENGTH_SHORT).show();
         final Brain brain = new Brain(this);
         new Thread(new Runnable() {
             public void run() {
@@ -137,7 +143,7 @@ public class SettingsActivity extends Activity {
                 runOnUiThread(new Runnable() {
                     public void run() {
                         if (r == null) Toast.makeText(SettingsActivity.this,
-                                "No provider answered — check your keys or connection.", Toast.LENGTH_LONG).show();
+                                "No provider answered - check your keys or connection.", Toast.LENGTH_LONG).show();
                         else Toast.makeText(SettingsActivity.this,
                                 "OK via " + r.provider, Toast.LENGTH_LONG).show();
                     }

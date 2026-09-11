@@ -1,29 +1,39 @@
 package com.jarvis.assistant;
 
+import android.app.ActivityManager;
 import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.os.Build;
 import android.os.Environment;
+import android.os.SystemClock;
 import android.util.Base64;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
 import java.net.URLEncoder;
 import java.security.SecureRandom;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Local command skills that run on-device (no server, no key needed for most). */
+/** All local command skills — run on-device (no server, no key needed for most). */
 public class Skills {
     public static class Out {
         public String text;
@@ -34,14 +44,16 @@ public class Skills {
     private final Context ctx;
     private final NotesDb db;
     private final SharedPreferences prefs;
+    private final Brain brain;
 
-    public Skills(Context c) {
+    public Skills(Context c, Brain b) {
         ctx = c;
         db = new NotesDb(c);
         prefs = c.getSharedPreferences("jarvis", Context.MODE_PRIVATE);
+        brain = b;
     }
 
-    /** Returns null if the input isn't a skill command (→ fall through to the brain). */
+    /** Returns null if the input isn't a skill command (then the AI brain answers). */
     public Out handle(String raw) {
         String s = raw == null ? "" : raw.trim();
         String l = s.toLowerCase(Locale.ROOT);
@@ -51,7 +63,7 @@ public class Skills {
 
         if (l.equals("time") || l.equals("date") || l.contains("what time") || l.contains("what's the time")
                 || l.contains("whats the time") || l.equals("what day is it") || l.contains("today's date")) {
-            SimpleDateFormat f = new SimpleDateFormat("EEEE, d MMMM yyyy · HH:mm:ss", Locale.US);
+            SimpleDateFormat f = new SimpleDateFormat("EEEE, d MMMM yyyy - HH:mm:ss", Locale.US);
             o.text = "It's " + f.format(new Date());
             return o;
         }
@@ -99,7 +111,7 @@ public class Skills {
             long when = System.currentTimeMillis() + ms;
             long id = db.addReminder(when, text);
             schedule(when, text, (int) id);
-            o.text = "OK — I'll remind you to \"" + text + "\" in " + n + " " + unit + ".";
+            o.text = "OK - I'll remind you to \"" + text + "\" in " + n + " " + unit + ".";
             return o;
         }
         if (l.equals("reminders") || l.equals("reminder list")) { o.text = reminderList(); return o; }
@@ -110,7 +122,7 @@ public class Skills {
         }
 
         if (l.startsWith("weather ")) { o.text = weather(l.substring(8).trim()); return o; }
-        if (l.equals("weather")) { o.text = "Usage: weather <city>  (free, no key — Open-Meteo)"; return o; }
+        if (l.equals("weather")) { o.text = "Usage: weather <city>  (free, no key - Open-Meteo)"; return o; }
 
         if (l.startsWith("search ") || l.startsWith("google ")) {
             o.text = search(l.replaceFirst("(?i)^(search|google)\\s+", ""));
@@ -120,6 +132,23 @@ public class Skills {
 
         Matcher tr = Pattern.compile("(?i)^translate (.+?) to ([a-z ]+)$").matcher(l);
         if (tr.find()) { o.text = translate(tr.group(1).trim(), tr.group(2).trim()); return o; }
+
+        if (l.equals("system") || l.equals("sysinfo") || l.startsWith("system info")) { o.text = systemInfo(); return o; }
+        if (l.equals("network") || l.equals("net") || l.equals("ip")) { o.text = network(); return o; }
+
+        if (l.equals("lang list") || l.equals("languages")) { o.text = langList(); return o; }
+        if (l.startsWith("lang set ")) {
+            String lg = l.substring(9).trim();
+            prefs.edit().putString("lang", lg).apply();
+            o.text = "Language set to " + lg + ". I'll answer in " + lg + " from now on.";
+            return o;
+        }
+        if (l.equals("lang")) {
+            String cur = prefs.getString("lang", "");
+            o.text = (cur.isEmpty() ? "No language set (I auto-detect)." : "Language: " + cur)
+                    + "\nTry: lang set spanish   |   lang list";
+            return o;
+        }
 
         if (l.equals("persona list") || l.equals("personas")) { o.text = Personas.list(); return o; }
         if (l.startsWith("persona ")) {
@@ -133,6 +162,17 @@ public class Skills {
             return o;
         }
 
+        if (l.equals("brain") || l.equals("brain status")) { o.text = brainStatus(); return o; }
+
+        if (l.startsWith("build ") || l.startsWith("app ") || l.startsWith("make me an app") || l.startsWith("make an app")) {
+            String idea = l.replaceFirst("(?i)^(build|app|make me an app|make an app)\\s+", "");
+            o.text = buildApp(idea);
+            return o;
+        }
+
+        if (l.startsWith("video") || l.startsWith("movie")) { o.text = videoGuide(); return o; }
+        if (l.startsWith("clihub") || l.startsWith("cli hub")) { o.text = clihubGuide(); return o; }
+
         if (l.startsWith("image ") || l.startsWith("draw ") || l.startsWith("picture ")) {
             String p = l.replaceFirst("(?i)^(image|draw|picture)\\s+", "");
             return image(p);
@@ -143,22 +183,29 @@ public class Skills {
 
     private String help() {
         return "JARVIS commands (all run on this phone):\n"
-                + "• time / date — the time now\n"
-                + "• calc 2+2*10 — safe math\n"
-                + "• password 16 — strong password\n"
-                + "• note add <text> · note list · note del <n>\n"
-                + "• remind me in 10 minutes to <text> · reminders\n"
-                + "• weather <city> — free, no key\n"
-                + "• search <query> · wiki <topic>\n"
-                + "• translate <text> to <language>\n"
-                + "• persona <name> · persona list\n"
-                + "• image <description> — free\n"
-                + "• anything else → the AI brain";
+                + "time / date - the time now\n"
+                + "calc 2+2*10 - safe math\n"
+                + "password 16 - strong password\n"
+                + "note add <text> | note list | note del <n>\n"
+                + "remind me in 10 minutes to <text> | reminders\n"
+                + "weather <city> - free, no key\n"
+                + "search <query> | wiki <topic>\n"
+                + "translate <text> to <language>\n"
+                + "system - CPU/RAM/battery/device\n"
+                + "network - local & public IP, DNS\n"
+                + "lang set spanish | lang list - 30 languages\n"
+                + "persona <name> | persona list\n"
+                + "brain status - which providers are set\n"
+                + "build <idea> - I write a whole app\n"
+                + "image <description> - free picture\n"
+                + "video - real MP4 via the core\n"
+                + "clihub - CLI-Anything hub info\n"
+                + "anything else goes to the AI brain";
     }
 
     private static String join(List<String> items) {
         StringBuilder sb = new StringBuilder();
-        for (String it : items) sb.append("• ").append(it).append("\n");
+        for (String it : items) sb.append("- ").append(it).append("\n");
         return sb.toString().trim();
     }
 
@@ -169,7 +216,7 @@ public class Skills {
         long now = System.currentTimeMillis();
         for (Object[] it : r) {
             long mins = Math.max(0, (((Long) it[1]) - now) / 60000L);
-            sb.append("• #").append(it[0]).append(" in ").append(mins).append(" min: ").append(it[2]).append("\n");
+            sb.append("- #").append(it[0]).append(" in ").append(mins).append(" min: ").append(it[2]).append("\n");
         }
         return sb.toString().trim();
     }
@@ -182,6 +229,154 @@ public class Skills {
         PendingIntent pi = PendingIntent.getBroadcast(ctx, id, intent, flags);
         AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
         try { am.set(AlarmManager.RTC_WAKEUP, whenMs, pi); } catch (Exception ignored) { }
+    }
+
+    private String systemInfo() {
+        StringBuilder sb = new StringBuilder("SYSTEM\n");
+        sb.append("device: ").append(Build.MANUFACTURER).append(" ").append(Build.MODEL).append("\n");
+        sb.append("android: ").append(Build.VERSION.RELEASE).append("\n");
+        try {
+            ActivityManager am = (ActivityManager) ctx.getSystemService(Context.ACTIVITY_SERVICE);
+            ActivityManager.MemoryInfo mi = new ActivityManager.MemoryInfo();
+            am.getMemoryInfo(mi);
+            sb.append("RAM: ").append((mi.totalMem - mi.availMem) / 1048576L).append(" / ")
+              .append(mi.totalMem / 1048576L).append(" MB used\n");
+        } catch (Exception ignored) { }
+        long up = SystemClock.elapsedRealtime() / 1000L;
+        sb.append("uptime: ").append(fmt(up)).append("\n");
+        try {
+            IntentFilter f = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
+            Intent bstat = ctx.registerReceiver(null, f);
+            if (bstat != null) {
+                int level = bstat.getIntExtra("level", -1);
+                int scale = bstat.getIntExtra("scale", -1);
+                int pct = (scale > 0) ? (level * 100 / scale) : -1;
+                int status = bstat.getIntExtra("status", -1);
+                String st = status == 2 ? "charging" : status == 5 ? "full" : "on battery";
+                sb.append("battery: ").append(pct).append("% (").append(st).append(")");
+            }
+        } catch (Exception ignored) { }
+        return sb.toString().trim();
+    }
+
+    private String fmt(long secs) {
+        long d = secs / 86400, h = (secs % 86400) / 3600, m = (secs % 3600) / 60;
+        return (d > 0 ? d + "d " : "") + h + "h " + m + "m";
+    }
+
+    private String network() {
+        StringBuilder sb = new StringBuilder("NETWORK\n");
+        try {
+            ConnectivityManager cm = (ConnectivityManager) ctx.getSystemService(Context.CONNECTIVITY_SERVICE);
+            NetworkInfo ni = cm.getActiveNetworkInfo();
+            sb.append("connection: ").append(ni != null ? ni.getTypeName() : "none").append("\n");
+        } catch (Exception ignored) { }
+        try {
+            Enumeration<NetworkInterface> e = NetworkInterface.getNetworkInterfaces();
+            sb.append("local IP:");
+            boolean any = false;
+            while (e.hasMoreElements()) {
+                NetworkInterface n = e.nextElement();
+                Enumeration<InetAddress> a = n.getInetAddresses();
+                while (a.hasMoreElements()) {
+                    InetAddress ia = a.nextElement();
+                    if (!ia.isLoopbackAddress() && ia instanceof Inet4Address) {
+                        sb.append(" ").append(ia.getHostAddress());
+                        any = true;
+                    }
+                }
+            }
+            if (!any) sb.append(" (none)");
+            sb.append("\n");
+        } catch (Exception ignored) { }
+        try {
+            String pub = Net.get("https://api.ipify.org", 8000).trim();
+            if (!pub.isEmpty()) sb.append("public IP: ").append(pub).append("\n");
+        } catch (Exception ignored) { }
+        try {
+            sb.append("DNS: google.com -> ").append(InetAddress.getByName("google.com").getHostAddress());
+        } catch (Exception ignored) { }
+        return sb.toString().trim();
+    }
+
+    private String langList() {
+        return "Languages (lang set <name>):\n"
+                + "english, spanish, french, german, italian, portuguese, russian, dutch,\n"
+                + "polish, turkish, arabic, hindi, japanese, korean, chinese, indonesian,\n"
+                + "vietnamese, thai, swedish, norwegian, danish, finnish, greek, czech,\n"
+                + "romanian, hungarian, hebrew, ukrainian, malay, filipino";
+    }
+
+    private String brainStatus() {
+        List<String> have = new ArrayList<String>();
+        if (!prefs.getString("groq_key", "").isEmpty()) have.add("Groq");
+        if (!prefs.getString("gemini_key", "").isEmpty()) have.add("Gemini");
+        if (!prefs.getString("openrouter_key", "").isEmpty()) have.add("OpenRouter");
+        if (!prefs.getString("cerebras_key", "").isEmpty()) have.add("Cerebras");
+        if (!prefs.getString("mistral_key", "").isEmpty()) have.add("Mistral");
+        if (!prefs.getString("xai_key", "").isEmpty()) have.add("xAI");
+        if (!prefs.getString("deepseek_key", "").isEmpty()) have.add("DeepSeek");
+        if (!prefs.getString("github_key", "").isEmpty()) have.add("GitHub Models");
+        if (!prefs.getString("custom_key", "").isEmpty()) have.add("Custom");
+        if (!prefs.getString("ollama_url", "").isEmpty()) have.add("Ollama (local)");
+        String persona = prefs.getString("persona", "assistant");
+        String lang = prefs.getString("lang", "");
+        return "BRAIN\n"
+                + "persona: " + persona + "\n"
+                + "language: " + (lang.isEmpty() ? "(auto)" : lang) + "\n"
+                + "providers: " + (have.isEmpty() ? "none set - using free anonymous brain (Pollinations)" : joinInline(have)) + "\n"
+                + "fallback: Ollama (if set) then free brain\n"
+                + "add keys in SET";
+    }
+
+    private static String joinInline(List<String> items) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < items.size(); i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(items.get(i));
+        }
+        return sb.toString();
+    }
+
+    private String buildApp(String idea) {
+        if (idea.isEmpty()) return "Usage: build <idea>  e.g. build coin flip game";
+        Brain.Result r = brain.askBuild(idea);
+        if (r == null) return "No brain available to build with - add a free key in SET (Groq/Gemini), or check your connection.";
+        String ext = "txt";
+        String low = idea.toLowerCase(Locale.ROOT);
+        if (low.contains("website") || low.contains("html") || low.contains("web") || low.contains("page")) ext = "html";
+        else if (low.contains("python") || low.contains("script") || low.contains("cli")) ext = "py";
+        String path = saveText(r.text, "build_" + System.currentTimeMillis() + "." + ext);
+        String preview = r.text.length() > 500 ? r.text.substring(0, 500) + "\n... (truncated - full code saved)" : r.text;
+        return "Built: " + idea + "  (via " + r.provider + ")\n"
+                + "Saved: " + (path == null ? "(couldn't save file)" : path) + "\n\n" + preview;
+    }
+
+    private String videoGuide() {
+        return "VIDEO - real MP4 generation runs on the full core (it needs ffmpeg + AI frames + Ken Burns motion).\n"
+                + "1. Tap CORE / OPEN at the top\n"
+                + "2. In the core, run: video make <prompt>\n"
+                + "For an instant picture of a scene instead, try: image <scene>";
+    }
+
+    private String clihubGuide() {
+        return "CLI-HUB (CLI-Anything) - a registry of 40+ agent-native CLIs: Claude Code, OpenCode, OpenClaw, Codex, Qodercli, Goose, GitHub Copilot.\n"
+                + "It runs on the Kali core - tap CORE / OPEN, then: clihub list   or   clihub install <name>.\n"
+                + "On this phone I can build or explain anything directly - try: build <idea>";
+    }
+
+    private String saveText(String content, String name) {
+        try {
+            File dir = new File(ctx.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), "jarvis");
+            if (!dir.exists()) dir.mkdirs();
+            File f = new File(dir, name);
+            FileOutputStream fos = new FileOutputStream(f);
+            fos.write(content.getBytes("UTF-8"));
+            fos.close();
+            return f.getAbsolutePath();
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private String weather(String city) {
@@ -202,10 +397,10 @@ public class Skills {
             int code = cur.getInt("weather_code");
             double wind = cur.getDouble("wind_speed_10m");
             int hum = cur.getInt("relative_humidity_2m");
-            return name + ", " + country + ": " + t + "°C, " + wdesc(code)
+            return name + ", " + country + ": " + t + " C, " + wdesc(code)
                     + ", wind " + wind + " km/h, humidity " + hum + "%";
         } catch (Exception e) {
-            return "Weather lookup failed for \"" + city + "\" — check your connection.";
+            return "Weather lookup failed for \"" + city + "\" - check your connection.";
         }
     }
 
@@ -239,7 +434,7 @@ public class Skills {
             }
         } catch (Exception e) { }
         String w = wiki(q);
-        return w != null ? w : "No results for \"" + q + "\" — try: wiki " + q;
+        return w != null ? w : "No results for \"" + q + "\" - try: wiki " + q;
     }
 
     private String wiki(String title) {
@@ -249,7 +444,7 @@ public class Skills {
             String resp = Net.get(u, 20000);
             String e = new JSONObject(resp).optString("extract");
             if (e == null || e.trim().isEmpty()) return null;
-            if (e.length() > 700) e = e.substring(0, 700) + "…";
+            if (e.length() > 700) e = e.substring(0, 700) + "...";
             return e.trim();
         } catch (Exception ex) {
             return null;
@@ -258,7 +453,6 @@ public class Skills {
 
     private String translate(String text, String to) {
         String code = langCode(to);
-        // primary: Google gtx (no key)
         try {
             String u = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=" + code
                     + "&dt=t&q=" + URLEncoder.encode(text, "UTF-8");
@@ -271,16 +465,15 @@ public class Skills {
                 if (piece != null) sb.append(piece.optString(0));
             }
             String out = sb.toString().trim();
-            if (!out.isEmpty()) return out + "  (→ " + code + ")";
+            if (!out.isEmpty()) return out + "  (-> " + code + ")";
         } catch (Exception e) { }
-        // fallback: MyMemory (free, no key)
         try {
             String u = "https://api.mymemory.translated.net/get?q=" + URLEncoder.encode(text, "UTF-8")
                     + "&langpair=en|" + code;
             String resp = Net.get(u, 15000);
             String out = new JSONObject(resp).optJSONObject("responseData").optString("translatedText");
             if (out != null && !out.trim().isEmpty() && !out.equalsIgnoreCase(text)) {
-                return out.trim() + "  (→ " + code + ")";
+                return out.trim() + "  (-> " + code + ")";
             }
         } catch (Exception e) { }
         return "Couldn't translate to \"" + code + "\".";
@@ -338,7 +531,6 @@ public class Skills {
                 }
             } catch (Exception ignored) { }
         }
-        // free fallback: Pollinations
         try {
             String url = "https://image.pollinations.ai/prompt/" + URLEncoder.encode(prompt, "UTF-8")
                     + "?width=1024&height=1024&nologo=true";
@@ -354,7 +546,7 @@ public class Skills {
                 }
             }
         } catch (Exception ignored) { }
-        o.text = "Image generation failed — check your connection, or add a free Gemini key in ⚙ Settings for better quality.";
+        o.text = "Image generation failed - check your connection, or add a free Gemini key in SET for better quality.";
         return o;
     }
 
