@@ -10,6 +10,31 @@ brain so it is never silent.
 
 ---
 
+## 🎙️ NEW: MARK LIII — the real-time voice assistant (like the video)
+
+The **"JARVIS Mark 53"** project from the video is now bundled in `mark-liii/`.
+It's a voice-first assistant built on the **free Gemini Live API**: say "Hey
+Jarvis" (local wake word) and talk — it answers in 1–2 seconds in any language.
+
+- Real-time voice (Gemini Live) · wake word · screen & camera vision
+- System control (apps, volume, brightness, WiFi) · persistent memory
+- Plugin system (one file = one skill) · morning briefing · web search
+- **Phone dashboard** — control it from your phone via QR code
+- Local LLM support (Ollama) alongside Gemini
+
+**Install (Linux — Kali phone or PC), one command:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ahaqwmateas-code/jarvis-unified/main/mark-liii/install.sh -o install.sh
+GEMINI_KEY=YOUR_KEY bash install.sh      # get a free key at aistudio.google.com/apikey
+venv/bin/python main.py
+```
+
+Needs: a display (X11/VNC) + mic + speaker + a free Gemini key.
+License: CC BY-NC 4.0 (free, non-commercial) by FatihMakes.
+
+---
+
 ## Two ways to run JARVIS
 
 ### 1. 📱 Native Android app — `app-android/` (works on ANY phone)
