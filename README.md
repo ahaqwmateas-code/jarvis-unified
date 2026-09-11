@@ -19,7 +19,7 @@ feature is its **own page** — the app opens to a home grid of 21 pages:
 Chat · Time · Calculator · Password · Weather · Search · Wikipedia ·
 Translate · Notes · Reminders · Personas (16) · Language (30) · Image ·
 Build (AI writes apps) · System · Network · Brain · Video (core) · CLI Hub
-(core) · Core (full JARVIS) · Settings (API keys).
+(core) · Composio (1,500+ app tools) · Core (full JARVIS) · Settings.
 
 - **Chat** — multi-provider brain with auto-failover (Groq → Gemini →
   OpenRouter → Cerebras → Mistral → xAI → DeepSeek → GitHub Models → Custom
@@ -99,3 +99,15 @@ JARVIS tries the best brain first and auto-switches on rate limits or errors.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+
+## Composio integration (MCP)
+
+JARVIS can act as an MCP client against Composio's hosted endpoint
+`https://connect.composio.dev/mcp`, giving it tools across 1,500+ apps
+(Gmail, GitHub, Google Calendar, Notion, Slack...).
+
+- **App:** the Composio page (add your `ck_...` API key in Settings).
+- **Core:** the `composio` skill — `composio key <ck_...>`, `composio status`,
+  `composio tools`, `composio run <TOOL> <json>`.
+- Get a key and connect apps at dashboard.composio.dev.

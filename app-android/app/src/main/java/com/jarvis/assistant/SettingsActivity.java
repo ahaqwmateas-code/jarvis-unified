@@ -64,6 +64,7 @@ public class SettingsActivity extends Activity {
         addField(root, "custom_base", "Custom base URL (e.g. https://api.example.com/v1)");
         addField(root, "custom_key", "Custom provider key");
         addField(root, "custom_model", "Custom provider model (e.g. model-name)");
+        addField(root, "composio_key", "Composio API key (ck_) - dashboard.composio.dev");
         addField(root, "ollama_url", "Local Ollama URL (optional)");
         addField(root, "server_url", "JARVIS Core server URL");
 

@@ -52,7 +52,7 @@ public class MainActivity extends Activity {
         TextView sub = new TextView(this);
         sub.setTextColor(GREY);
         sub.setTextSize(12);
-        sub.setText("v3.1 - every feature is a page - tap one below");
+        sub.setText("v3.2 - every feature is a page - Composio added");
         ht.addView(sub);
         hr.addView(ht, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         hr.addView(btn("CORE", new Runnable() { public void run() { go(ServerActivity.class); } }));
@@ -100,11 +100,56 @@ public class MainActivity extends Activity {
         addRow(grid,
             card("\u2328", "CLI Hub", "40+ agent CLIs", ClihubActivity.class),
             card("\u2699", "Settings", "API keys & more", SettingsActivity.class));
+        grid.addView(cardFull("\uD83D\uDD0C", "Composio", "1,500+ app tools (Gmail, GitHub, Calendar, Notion...) - one MCP endpoint", ComposioActivity.class));
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+    }
+
+    private LinearLayout cardFull(String emoji, String name, String desc, final Class<?> cls) {
+        LinearLayout c = new LinearLayout(this);
+        c.setOrientation(LinearLayout.HORIZONTAL);
+        c.setGravity(Gravity.CENTER_VERTICAL);
+        c.setPadding(dp(14), dp(14), dp(14), dp(14));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Color.rgb(12, 22, 32));
+        bg.setCornerRadius(dp(14));
+        bg.setStroke(dp(1), Color.rgb(24, 84, 54));
+        c.setBackground(bg);
+
+        TextView em = new TextView(this);
+        em.setText(emoji);
+        em.setTextSize(28);
+        c.addView(em);
+
+        LinearLayout tt = new LinearLayout(this);
+        tt.setOrientation(LinearLayout.VERTICAL);
+        tt.setPadding(dp(12), 0, 0, 0);
+        TextView nm = new TextView(this);
+        nm.setText(name);
+        nm.setTextColor(GREEN);
+        nm.setTextSize(15);
+        nm.setTypeface(null, Typeface.BOLD);
+        tt.addView(nm);
+        TextView ds = new TextView(this);
+        ds.setText(desc);
+        ds.setTextColor(GREY);
+        ds.setTextSize(11);
+        tt.addView(ds);
+        c.addView(tt, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        c.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { go(cls); }
+        });
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        lp.setMargins(dp(4), dp(4), dp(4), dp(4));
+        row.addView(c, lp);
+        return row;
     }
 
     private void addRow(LinearLayout grid, LinearLayout a, LinearLayout b) {

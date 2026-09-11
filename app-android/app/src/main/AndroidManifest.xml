@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.jarvis.assistant"
-    android:versionCode="6"
-    android:versionName="3.1">
+    android:versionCode="7"
+    android:versionName="3.2">
 
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="34" />
 
@@ -48,6 +48,7 @@
         <activity android:name=".BrainActivity" android:exported="false" />
         <activity android:name=".VideoActivity" android:exported="false" />
         <activity android:name=".ClihubActivity" android:exported="false" />
+        <activity android:name=".ComposioActivity" android:exported="false" />
         <activity android:name=".SettingsActivity" android:exported="false" />
         <activity android:name=".ServerActivity" android:exported="false" />
 
