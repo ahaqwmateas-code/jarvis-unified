@@ -129,6 +129,31 @@ def ask_llm(prompt):
     return None
 
 
+def ask_cloud(prompt):
+    """Anonymous free cloud fallback (Pollinations) when Ollama is offline."""
+    try:
+        import requests
+        ctx = "\n".join(f"{r}: {t}" for r, t in HISTORY)
+        ctx = ctx[-3000:]
+        full = JARVIS_SYS + ("\n\nRecent conversation:\n" + ctx if ctx else "") + "\n\nUser: " + prompt
+        r = requests.post(
+            "https://text.pollinations.ai/openai",
+            json={"model": "openai", "messages": [
+                {"role": "system", "content": JARVIS_SYS},
+                {"role": "user", "content": full},
+            ]},
+            timeout=90,
+        )
+        if r.status_code == 200:
+            j = r.json()
+            c = j.get("choices") or []
+            if c and c[0].get("message", {}).get("content"):
+                return c[0]["message"]["content"].strip()
+    except Exception:
+        pass
+    return None
+
+
 def load_skills():
     skills = {}
     if not os.path.isdir(SKILLS_DIR):
@@ -188,6 +213,8 @@ def route(cmd):
                     return f"Skill '{name}' error: {e}"
     # LLM fallback
     ans = ask_llm(t)
+    if ans is None:
+        ans = ask_cloud(t)
     if ans is not None:
         return ans
     return "No AI online and no skill matched. Say 'help'."

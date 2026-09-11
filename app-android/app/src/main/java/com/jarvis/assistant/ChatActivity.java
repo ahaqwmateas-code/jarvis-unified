@@ -178,7 +178,7 @@ public class ChatActivity extends Activity {
                     public void run() {
                         if (r == null) {
                             replacePending(pending,
-                                    "No brain responded - add a free key in Settings, or check your connection. Built-in skills still work - type \"help\".",
+                                    "No brain answered - the free fallback was rate-limited.\n\nMake JARVIS fast and smart in 30 seconds (free):\n1. Open groq.com, sign in, go to API Keys, copy the gsk_ key\n2. Tap SET, paste it in the Groq field\n\nThen JARVIS uses llama-3.3-70b (free, ~14k requests/day).",
                                     null, null);
                         } else {
                             replacePending(pending, r.text + "\n\n- via " + r.provider, null, null);

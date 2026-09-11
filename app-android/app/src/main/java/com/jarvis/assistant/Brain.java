@@ -195,6 +195,29 @@ public class Brain {
     }
 
     private Result pollinations(String system, List<ChatMessage> history) {
+        // 1) Modern OpenAI-compatible endpoint (gpt-oss-20b, anonymous, reliable)
+        try {
+            JSONArray msgs = new JSONArray();
+            msgs.put(new JSONObject().put("role", "system").put("content", system));
+            int from = Math.max(0, history.size() - 8);
+            for (int i = from; i < history.size(); i++) {
+                ChatMessage m = history.get(i);
+                if (m.text == null || m.text.equals("...") || m.role == ChatMessage.SYSTEM) continue;
+                msgs.put(new JSONObject().put("role", m.role == ChatMessage.USER ? "user" : "assistant")
+                        .put("content", m.text));
+            }
+            JSONObject body = new JSONObject().put("model", "openai").put("messages", msgs);
+            String resp = Net.postJson("https://text.pollinations.ai/openai", body.toString(), null, 60000);
+            String text = new JSONObject(resp).getJSONArray("choices").getJSONObject(0)
+                    .optJSONObject("message").optString("content");
+            if (text != null && !text.trim().isEmpty()) {
+                Result r = new Result();
+                r.text = text.trim();
+                return r;
+            }
+        } catch (Exception e) { /* try legacy GET */ }
+
+        // 2) Legacy GET without the model param (the model=openai route now 402s)
         try {
             StringBuilder p = new StringBuilder();
             p.append(system).append("\n\n");
@@ -205,9 +228,9 @@ public class Brain {
                 p.append(m.role == ChatMessage.USER ? "User: " : "JARVIS: ").append(m.text).append("\n");
             }
             p.append("JARVIS: ");
-            String url = "https://text.pollinations.ai/" + URLEncoder.encode(p.toString(), "UTF-8") + "?model=openai";
+            String url = "https://text.pollinations.ai/" + URLEncoder.encode(p.toString(), "UTF-8");
             String resp = Net.get(url, 60000);
-            if (resp != null && !resp.trim().isEmpty()) {
+            if (resp != null && !resp.trim().isEmpty() && !resp.contains("\"error\"")) {
                 Result r = new Result();
                 r.text = resp.trim();
                 return r;

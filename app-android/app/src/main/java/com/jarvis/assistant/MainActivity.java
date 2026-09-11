@@ -52,7 +52,7 @@ public class MainActivity extends Activity {
         TextView sub = new TextView(this);
         sub.setTextColor(GREY);
         sub.setTextSize(12);
-        sub.setText("v3.2 - every feature is a page - Composio added");
+        sub.setText("v3.3 - free brain fixed (gpt-oss-20b fallback)");
         ht.addView(sub);
         hr.addView(ht, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         hr.addView(btn("CORE", new Runnable() { public void run() { go(ServerActivity.class); } }));
