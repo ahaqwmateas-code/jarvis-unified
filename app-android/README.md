@@ -1,78 +1,53 @@
 # JARVIS — native Android app (complete source)
 
-JARVIS as a real Android app. It runs **entirely on the phone** — no server, no
-Kali, no Python required. The chat UI, voice input, multi-provider AI brain and
-the skills are all native code in this project.
+JARVIS as a real Android app, running **entirely on the phone** — no server
+required. Every feature is its **own page**: open the app to a home grid and
+tap any of the 21 pages.
 
-## What it does
+## The pages
 
-- **Chat with the AI brain** — talks directly to free AI APIs with automatic
-  failover: Groq → Gemini → OpenRouter → Cerebras → Mistral → local Ollama →
-  anonymous free brain (Pollinations). Add your free keys in ⚙ Settings.
-- **Voice input** — tap 🎤 and speak (Android SpeechRecognizer).
-- **Built-in skills** (work even with no API key):
-  `time`, `calc 2+2*10`, `password 16`, `note add/list/del`,
-  `remind me in 10 minutes to …`, `weather <city>`, `search <q>`, `wiki <topic>`,
-  `translate <text> to <lang>`, `persona <name>`, `image <description>`.
-- **Persona library** — 16 bundled personas (curated subset of prompts.chat).
-- **Image generation** — Gemini (if key set) or free Pollinations, shown inline.
+Chat · Time · Calculator · Password · Weather · Search · Wikipedia ·
+Translate · Notes · Reminders · Personas (16) · Language (30) · Image ·
+Build (AI writes apps) · System · Network · Brain · Video (core) · CLI Hub
+(core) · Core (full JARVIS) · Settings (API keys).
+
+- **Chat** — AI brain with auto-failover (Groq → Gemini → OpenRouter →
+  Cerebras → Mistral → xAI → DeepSeek → GitHub Models → Custom → Ollama →
+  free anonymous brain) + voice input (MIC).
+- **Build** — describe an app, the AI writes the full code and saves it to
+  the phone's Documents/jarvis folder.
+- **Image** — free generation (Gemini if key set, else Pollinations), shown
+  inline and saved to Pictures/jarvis.
 - **Reminders** — system notifications via AlarmManager.
-- **CORE button** — opens the full JARVIS core (your Kali phone's web UI) for
-  the heavy server-side skills (app-building, video, voice web UI).
+- **Video / CLI Hub** — these need the full core (ffmpeg + shell on the Kali
+  phone); the pages open the core with one tap.
+- **Settings** — add free keys, a custom OpenAI-compatible provider, local
+  Ollama, and the core URL. No key? Everything still works: skills run
+  locally and the brain falls back to the free anonymous model.
 
 ## Project layout
 
 ```
-jarvis-android/
-├── app/src/main/
-│   ├── AndroidManifest.xml
-│   ├── java/com/jarvis/assistant/
-│   │   ├── MainActivity.java      chat screen + voice
-│   │   ├── ChatAdapter.java       chat bubbles
-│   │   ├── ChatMessage.java       message model
-│   │   ├── Brain.java             multi-provider AI + failover
-│   │   ├── Skills.java            all local skills
-│   │   ├── Calc.java              safe expression evaluator
-│   │   ├── Personas.java          bundled personas
-│   │   ├── NotesDb.java           SQLite notes/reminders
-│   │   ├── ReminderReceiver.java  notification alarms
-│   │   ├── SettingsActivity.java  keys + server URL
-│   │   ├── ServerActivity.java    JARVIS core web view
-│   │   └── Net.java               HTTP + JSON helper
-│   └── res/                       theme, strings, launcher icons
-├── build.gradle · settings.gradle · gradle.properties   (Android Studio)
-├── build.sh                        command-line build (no Gradle)
-├── jarvis.keystore                 signing key (password: jarvis123)
-└── JARVIS.apk                      the built, signed app
+app/src/main/
+├── AndroidManifest.xml
+├── java/com/jarvis/assistant/
+│   ├── MainActivity.java       home grid (21 pages)
+│   ├── ChatActivity.java       AI chat + voice
+│   ├── BasePage.java           themed page scaffold
+│   ├── Brain.java              multi-provider AI + failover
+│   ├── Skills.java             all skills (service layer)
+│   ├── Calc.java · Personas.java · NotesDb.java
+│   ├── Net.java · ChatAdapter.java · ChatMessage.java
+│   ├── ReminderReceiver.java   notification alarms
+│   ├── SettingsActivity.java · ServerActivity.java
+│   └── (one Activity per feature page)
+└── res/                        theme, strings, launcher icons
 ```
 
-## Build it yourself
+## Build
 
-**Option A — Android Studio:** open this folder, let Gradle sync (AGP 7.4.2,
-Gradle 7.6+, JDK 11+), press Run. If Android Studio's AGP complains about the
-`package` attribute in AndroidManifest.xml, delete that one attribute (the
-`namespace` in app/build.gradle covers it).
-
-**Option B — command line (what produced JARVIS.apk):**
-
-```bash
-bash build.sh
-```
-
-Requirements: JDK 11+, Android SDK build-tools 34 (aapt2/d8/apksigner/zipalign)
-and platform-34 (android.jar). No third-party libraries — the app uses only the
-Android framework (HttpURLConnection, org.json, SpeechRecognizer, SQLite).
-
-## Free API keys (optional, in ⚙ Settings)
-
-| Provider | Get a key at | Model used |
-|---|---|---|
-| Groq | groq.com | llama-3.3-70b-versatile |
-| Google Gemini | aistudio.google.com | gemini-2.0-flash |
-| OpenRouter | openrouter.ai | deepseek-chat-v3 (free) |
-| Cerebras | cloud.cerebras.ai | llama3.1-8b |
-| Mistral | console.mistral.ai | open-mistral-nemo |
-| Ollama (local) | ollama.com | llama3.1 |
-
-No key? The app still answers via the free anonymous brain, and every skill
-above still works.
+- **Android Studio:** open the folder, sync (AGP 7.4.2, Gradle 7.6+, JDK 11+),
+  press Run.
+- **Command line (what produced JARVIS.apk):** `bash build.sh` — needs JDK 11+
+  and Android build-tools 34 + platform-34. Zero third-party libraries.
+- **CI:** `.github/workflows/build-apk.yml` builds the APK on every push.

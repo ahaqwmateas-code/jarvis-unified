@@ -13,16 +13,21 @@ brain so it is never silent.
 ## Two ways to run JARVIS
 
 ### 1. 📱 Native Android app — `app-android/` (works on ANY phone)
-A complete Java app, zero third-party libraries, no server needed:
+A complete Java app, zero third-party libraries, no server needed. Every
+feature is its **own page** — the app opens to a home grid of 21 pages:
 
-- **Chat** with the multi-provider AI brain (Groq → Gemini → OpenRouter →
-  Cerebras → Mistral → Ollama → free anonymous brain), with auto-failover.
-- **Voice input** (Android speech recognition).
-- **On-device skills:** `calc`, `password`, `note add/list/del`,
-  `remind me in 10 minutes to …` (system notifications), `weather <city>`,
-  `search`, `wiki`, `translate`, `persona`, `image <desc>`.
-- **Personas** — 16 bundled, curated from prompts.chat.
-- **CORE button** — opens the full JARVIS core (below) for the heavy skills.
+Chat · Time · Calculator · Password · Weather · Search · Wikipedia ·
+Translate · Notes · Reminders · Personas (16) · Language (30) · Image ·
+Build (AI writes apps) · System · Network · Brain · Video (core) · CLI Hub
+(core) · Core (full JARVIS) · Settings (API keys).
+
+- **Chat** — multi-provider brain with auto-failover (Groq → Gemini →
+  OpenRouter → Cerebras → Mistral → xAI → DeepSeek → GitHub Models → Custom
+  → Ollama → free anonymous brain) + voice input.
+- **Build** — the AI writes a whole app and saves the code to the phone.
+- **Image** — free generation (Gemini/Pollinations), shown inline + saved.
+- **Reminders** — system notifications via AlarmManager.
+- **Video / CLI Hub** — need the full core (ffmpeg + shell); one-tap open.
 
 Download the ready-to-install APK: [`JARVIS.apk`](JARVIS.apk) (dev-signed).
 Rebuild it with `bash app-android/build.sh`, or open `app-android/` in Android
