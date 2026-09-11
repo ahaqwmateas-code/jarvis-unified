@@ -72,6 +72,25 @@ Fresh device? One command: `bash rebuild.sh` (then `bash ~/.jarvis/start.sh`).
 | weather | forecast |
 | wiki | Wikipedia summary |
 
+## The brain (sizes + add & connect)
+
+Make the brain **smaller** (low latency/RAM) or **bigger** (max quality) any time:
+
+| Command | What it does |
+|---|---|
+| `brain slim` | small & fast models (e.g. llama-3.1-8b-instant) |
+| `brain balanced` | default mix (llama-3.3-70b etc.) |
+| `brain max` | biggest models (deepseek-v3 / gemini-2.5) |
+| `brain size` | show current size |
+| `brain add <name> <base> <key> <model>` | connect ANY OpenAI-compatible API |
+| `brain key <key>` | auto-detect Groq/Gemini/OpenRouter/... |
+| `brain test [name]` | ping providers |
+| `brain off <name>` / `on <name>` | disable/enable without deleting the key |
+| `brain best <prov>` / `drop <prov>` / `model <id>` | ordering & models |
+
+The Android app has the same sizes on the Brain page (SLIM / BALANCED / MAX)
+plus a custom provider slot in Settings.
+
 ## The free brain stack
 
 | Provider | Free tier | Add with |

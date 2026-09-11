@@ -18,6 +18,29 @@ public class Brain {
 
     public Brain(Context c) { prefs = c.getSharedPreferences("jarvis", Context.MODE_PRIVATE); }
 
+    /** Brain size presets: slim = small & fast, balanced = default, max = biggest. */
+    public String modelFor(String provider) {
+        String size = prefs.getString("brain_size", "balanced");
+        if (provider.equals("groq"))
+            return size.equals("slim") ? "llama-3.1-8b-instant" : "llama-3.3-70b-versatile";
+        if (provider.equals("gemini"))
+            return size.equals("slim") ? "gemini-2.0-flash-lite"
+                 : size.equals("max") ? "gemini-2.5-flash" : "gemini-2.0-flash";
+        if (provider.equals("openrouter"))
+            return size.equals("max") ? "deepseek/deepseek-chat-v3-0324:free"
+                 : "meta-llama/llama-3.1-8b-instruct:free";
+        if (provider.equals("cerebras")) return "llama3.1-8b";
+        if (provider.equals("mistral"))
+            return size.equals("slim") ? "ministral-8b-latest" : "open-mistral-nemo";
+        if (provider.equals("xai")) return "grok-3-mini";
+        if (provider.equals("deepseek")) return "deepseek-chat";
+        if (provider.equals("github"))
+            return size.equals("max") ? "gpt-4o" : "gpt-4o-mini";
+        return null;
+    }
+
+    public String brainSize() { return prefs.getString("brain_size", "balanced"); }
+
     /** Normal chat: persona system prompt + any chosen language. */
     public Result ask(List<ChatMessage> history, String persona) {
         String system = Personas.systemFor(persona);
@@ -44,7 +67,7 @@ public class Brain {
         String gk = prefs.getString("groq_key", "");
         if (!gk.isEmpty()) {
             Result r = openai("https://api.groq.com/openai/v1/chat/completions",
-                    "llama-3.3-70b-versatile", "Bearer " + gk, system, history);
+                    modelFor("groq"), "Bearer " + gk, system, history);
             if (r != null) { r.provider = "Groq"; return r; }
         }
         String gem = prefs.getString("gemini_key", "");
@@ -55,37 +78,37 @@ public class Brain {
         String or = prefs.getString("openrouter_key", "");
         if (!or.isEmpty()) {
             Result r = openai("https://openrouter.ai/api/v1/chat/completions",
-                    "deepseek/deepseek-chat-v3-0324:free", "Bearer " + or, system, history);
+                    modelFor("openrouter"), "Bearer " + or, system, history);
             if (r != null) { r.provider = "OpenRouter"; return r; }
         }
         String ce = prefs.getString("cerebras_key", "");
         if (!ce.isEmpty()) {
             Result r = openai("https://api.cerebras.ai/v1/chat/completions",
-                    "llama3.1-8b", "Bearer " + ce, system, history);
+                    modelFor("cerebras"), "Bearer " + ce, system, history);
             if (r != null) { r.provider = "Cerebras"; return r; }
         }
         String mi = prefs.getString("mistral_key", "");
         if (!mi.isEmpty()) {
             Result r = openai("https://api.mistral.ai/v1/chat/completions",
-                    "open-mistral-nemo", "Bearer " + mi, system, history);
+                    modelFor("mistral"), "Bearer " + mi, system, history);
             if (r != null) { r.provider = "Mistral"; return r; }
         }
         String xk = prefs.getString("xai_key", "");
         if (!xk.isEmpty()) {
             Result r = openai("https://api.x.ai/v1/chat/completions",
-                    "grok-3-mini", "Bearer " + xk, system, history);
+                    modelFor("xai"), "Bearer " + xk, system, history);
             if (r != null) { r.provider = "xAI"; return r; }
         }
         String dk = prefs.getString("deepseek_key", "");
         if (!dk.isEmpty()) {
             Result r = openai("https://api.deepseek.com/chat/completions",
-                    "deepseek-chat", "Bearer " + dk, system, history);
+                    modelFor("deepseek"), "Bearer " + dk, system, history);
             if (r != null) { r.provider = "DeepSeek"; return r; }
         }
         String gh = prefs.getString("github_key", "");
         if (!gh.isEmpty()) {
             Result r = openai("https://models.inference.ai.azure.com/chat/completions",
-                    "gpt-4o-mini", "Bearer " + gh, system, history);
+                    modelFor("github"), "Bearer " + gh, system, history);
             if (r != null) { r.provider = "GitHub Models"; return r; }
         }
         String cb = prefs.getString("custom_base", "");
@@ -156,7 +179,7 @@ public class Brain {
             body.put("systemInstruction", new JSONObject().put("parts",
                     new JSONArray().put(new JSONObject().put("text", system))));
             body.put("contents", contents);
-            String url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key="
+            String url = "https://generativelanguage.googleapis.com/v1beta/models/" + modelFor("gemini") + ":generateContent?key="
                     + URLEncoder.encode(key, "UTF-8");
             String resp = Net.postJson(url, body.toString(), null, 45000);
             String text = new JSONObject(resp).getJSONArray("candidates").getJSONObject(0)

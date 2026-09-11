@@ -1,0 +1,8 @@
+bash -s << 'JARVIS_EOF'
+set -e
+mkdir -p ~/.jarvis/skills
+curl -fsSL https://raw.githubusercontent.com/ahaqwmateas-code/jarvis-unified/main/skills/brain.py -o ~/.jarvis/skills/brain.py
+echo "brain skill upgraded (slim/balanced/max + add/test/off/on)"
+python3 -c "import ast; ast.parse(open('$HOME/.jarvis/skills/brain.py').read()); print('brain.py syntax OK')"
+echo "Try: brain slim | brain size | brain add <name> <base> <key> <model> | brain test"
+JARVIS_EOF

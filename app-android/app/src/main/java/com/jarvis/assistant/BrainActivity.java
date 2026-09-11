@@ -1,9 +1,12 @@
 package com.jarvis.assistant;
 
+import android.graphics.Color;
+import android.view.View;
+import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
-/** Brain status + live test page. */
+/** Brain status + live test + size selector page. */
 public class BrainActivity extends BasePage {
     private TextView out;
     private Skills skills;
@@ -15,6 +18,33 @@ public class BrainActivity extends BasePage {
     protected void build(LinearLayout c) {
         skills = new Skills(this, new Brain(this));
         brain = new Brain(this);
+
+        label("Brain size:");
+        gap(4);
+        LinearLayout sizeRow = new LinearLayout(this);
+        sizeRow.setOrientation(LinearLayout.HORIZONTAL);
+        final String[] sizes = {"slim", "balanced", "max"};
+        final String[] labels = {"SLIM fast", "BALANCED", "MAX smart"};
+        for (int i = 0; i < sizes.length; i++) {
+            final String sz = sizes[i];
+            Button b = new Button(this);
+            b.setText(labels[i]);
+            boolean cur = sz.equals(getSharedPreferences("jarvis", MODE_PRIVATE).getString("brain_size", "balanced"));
+            b.setTextColor(cur ? Color.BLACK : GREEN);
+            b.setBackgroundColor(cur ? GREEN : CARD);
+            b.setAllCaps(false);
+            b.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    getSharedPreferences("jarvis", MODE_PRIVATE).edit().putString("brain_size", sz).apply();
+                    toast("Brain size: " + sz);
+                    recreate();
+                }
+            });
+            sizeRow.addView(b, new LinearLayout.LayoutParams(0, dp(44), 1f));
+        }
+        c.addView(sizeRow);
+        gap(12);
+
         out = text("");
         out.setTypeface(android.graphics.Typeface.MONOSPACE);
         c.addView(out);

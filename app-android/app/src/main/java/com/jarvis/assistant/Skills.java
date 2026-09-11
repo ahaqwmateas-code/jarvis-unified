@@ -291,6 +291,7 @@ public class Skills {
         if (!prefs.getString("ollama_url", "").isEmpty()) have.add("Ollama (local)");
         return "persona: " + currentPersona() + "\n"
                 + "language: " + (currentLang().isEmpty() ? "(auto)" : currentLang()) + "\n"
+                + "size: " + brain.brainSize().toUpperCase(java.util.Locale.US) + "  (change above)\n"
                 + "providers: " + (have.isEmpty() ? "none set - free anonymous brain (Pollinations)" : joinInline(have)) + "\n"
                 + "fallback: Ollama then free brain\n"
                 + "add keys in Settings";
