@@ -1,0 +1,108 @@
+bash -s << 'JARVIS_EOF'
+set -e
+PY=$(command -v python3)
+[ -x ~/omni-jarvis/venv/bin/python ] && PY=~/omni-jarvis/venv/bin/python
+
+"$PY" - << 'PYEOF'
+import os, re, shutil, py_compile
+
+J = os.path.expanduser("~/.jarvis")
+CORE = os.path.join(J, "core.py")
+BAK = CORE + ".bak"
+
+src = open(CORE).read()
+orig = src
+
+# ---- 1) ensure ask_anonymous exists (idempotent) ----
+FN = '''
+
+def ask_anonymous(prompt):
+    """Free anonymous cloud fallback (Pollinations /openai, gpt-oss-20b) - no key needed."""
+    try:
+        import requests
+        ctx = "\\n".join(f"{r}: {t}" for r, t in HISTORY)
+        ctx = ctx[-3000:]
+        full = JARVIS_SYS + ("\\n\\nRecent conversation:\\n" + ctx if ctx else "") + "\\n\\nUser: " + prompt
+        r = requests.post("https://text.pollinations.ai/openai",
+                          json={"model": "openai", "messages": [
+                              {"role": "system", "content": JARVIS_SYS},
+                              {"role": "user", "content": full}]},
+                          timeout=90)
+        if r.status_code == 200:
+            c = (r.json().get("choices") or [{}])
+            if c and c[0].get("message", {}).get("content"):
+                return c[0]["message"]["content"].strip()
+    except Exception:
+        pass
+    return None
+'''
+if "def ask_anonymous(" not in src:
+    anchor = "\ndef ask_llm("
+    if anchor in src:
+        src = src.replace(anchor, FN + anchor, 1)
+        print("core.py: ask_anonymous added")
+    else:
+        print("WARN: 'def ask_llm(' anchor not found - anonymous brain not added")
+else:
+    print("core.py: ask_anonymous already present")
+
+# ---- 2) wire route(): insert anonymous fallback before the final return ----
+final_ret = re.compile(r'(?m)^(\s*)return "No AI online and no skill matched\. Say \'help\'\."\s*$')
+if "ask_anonymous(t)" not in src:
+    m = final_ret.search(src)
+    if m:
+        ind = m.group(1)
+        ins = ind + 'if ans is None:\n' + ind + '    ans = ask_anonymous(t)\n'
+        src = src[:m.start()] + ins + src[m.end():]
+        print("core.py: route() now falls back to the anonymous brain")
+    else:
+        print("WARN: route() final return not found (core may differ)")
+else:
+    print("core.py: route() already wired")
+
+# ---- 3) wire /api/chat: try anonymous before the Ollama-offline message ----
+ask_llm_msg = re.compile(r'(?m)^(\s*)(ans = ask_llm\(msg\))\s*$')
+if "ask_anonymous(msg)" not in src:
+    m = ask_llm_msg.search(src)
+    if m:
+        ind = m.group(1)
+        ins = ind + 'ans = ask_llm(msg)\n' + ind + 'if ans is None:\n' + ind + '    ans = ask_anonymous(msg)\n'
+        src = src[:m.start()] + ins + src[m.end():]
+        print("core.py: /api/chat now tries the anonymous brain")
+    else:
+        print("WARN: /api/chat 'ans = ask_llm(msg)' not found")
+else:
+    print("core.py: /api/chat already wired")
+
+if src == orig:
+    print("v23.1: nothing to change")
+else:
+    shutil.copy(CORE, BAK)
+    open(CORE, "w").write(src)
+    try:
+        py_compile.compile(CORE, doraise=True)
+        print("core.py COMPILES OK")
+    except Exception as e:
+        shutil.copy(BAK, CORE)
+        print("PATCH FAILED - restored backup:", e)
+        raise SystemExit(1)
+
+# ---- 4) restart JARVIS so the change takes effect ----
+import time, subprocess, urllib.request
+PY = "python3"
+vp = os.path.expanduser("~/omni-jarvis/venv/bin/python")
+if os.path.exists(vp):
+    PY = vp
+subprocess.run(["pkill", "-f", "core.py"])
+time.sleep(1)
+log = open("/tmp/jarvis.log", "w")
+subprocess.Popen([PY, CORE], stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+time.sleep(3)
+try:
+    h = urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=6).read().decode()
+    print("HEALTH:", h)
+except Exception as e:
+    print("CHECK FAILED:", e, "- see /tmp/jarvis.log")
+print("v23.1 done")
+PYEOF
+JARVIS_EOF

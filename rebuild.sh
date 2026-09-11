@@ -29,7 +29,8 @@ for p in jarvis_v9_brain_patch.py \
          jarvis_v20_video_patch.py \
          jarvis_v21_imagefix_patch.py \
          jarvis_v22_pwa_patch.py \
-         jarvis_v23_anonymous_patch.py; do
+         jarvis_v23_anonymous_patch.py \
+         jarvis_v23_1_anonymous_patch.py; do
   echo "   applying $p"
   python3 "$S/patches/$p"
 done
