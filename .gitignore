@@ -8,7 +8,6 @@ venv/
 
 # Android / Java
 *.class
-*.keystore
 *.jks
 .gradle/
 build/
