@@ -1,24 +1,12 @@
-# Python
+# Secrets & credentials
+.env
+.hermes/
+auth.json
+*.key
+*.pem
+
+# System & temp files
 __pycache__/
 *.pyc
-*.pyo
-*.egg-info/
-.venv/
-venv/
-
-# Android / Java
-*.class
-*.jks
-.gradle/
-build/
-local.properties
-.idea/
-*.iml
-
-# OS / editor
 .DS_Store
-Thumbs.db
-*.swp
-
-# Runtime artifacts
-/tmp/
+*.log
